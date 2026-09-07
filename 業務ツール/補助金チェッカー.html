@@ -6,7 +6,7 @@
 <title>補助金チェッカー</title>
 <!--
   これは何か: 飲食事業者向けの補助金・助成金要件チェッカー。
-  主な機能: 会社プロフィールとの照合、3段階判定、制度データ更新、バックアップ、印刷。
+  主な機能: 会社プロフィールとの照合、5段階判定、制度データ更新、バックアップ、印刷。
   初回起動: プロフィールは未入力（空）。「見本プロフィールを入れる」で見本を投入、「白紙に戻す」で保存内容を全消去して初期状態に戻る。
   データの流れ: 画面入力 → localStorageへ保存 → 同梱制度データと照合 → 判定結果を画面・印刷へ出力。
   外部送信: 一切ありません。外部通信、自動アクセス、外部リソース読み込みは行いません。
@@ -105,7 +105,7 @@ h1{margin:6px 0 0;font-size:30px;font-weight:600;letter-spacing:.06em}
 </head>
 <body>
 <div class="app">
-<aside class="side" id="sidebar"><div class="brand">業務ツール</div><div class="foot">データはこのパソコンの中にだけ保存されます。<br>ネット通信なし。<br>画面バージョン: 2026-09-06</div></aside>
+<aside class="side" id="sidebar"><div class="brand">業務ツール</div><div class="foot">データはこのパソコンの中にだけ保存されます。<br>ネット通信なし。<br>画面バージョン: 2026-09-07</div></aside>
 <main class="main">
 <header class="head">
 <div class="head-title"><div class="sub"><span id="companySub">名称未設定</span> ・ 制度データ <span id="dataUpdatedSub">2026-09-05</span> 更新</div><h1 class="serif">補助金チェッカー</h1></div>
@@ -1154,7 +1154,7 @@ const EMPTY_PROFILE = {
 };
 let profile = cloneValue(EMPTY_PROFILE);
 let activeData = cloneValue(SEIDO_DATA);
-let judgement = {"今すぐ":[],"こうすれば":[],"対象外":[],"締切済み":[]};
+let judgement = {"今すぐ":[],"次回募集待ち":[],"こうすれば":[],"対象外":[],"締切済み":[]};
 let testToday = null;
 
 // ---- 汎用DOM・データ補助 ----
@@ -1318,6 +1318,9 @@ function judgeScheme(scheme){
   });
   if(outReasons.length) return {stage:"対象外",reasons:outReasons};
   if(missing.length) return {stage:"こうすれば",reasons:missing};
+  if(scheme.締切.次回締切===null && scheme.締切.通年!==true){
+    return {stage:"次回募集待ち",reasons:["今は申請できません（"+scheme.締切.公募時期+"）"]};
+  }
   return {stage:"今すぐ",reasons:[]};
 }
 function deadlineSort(a,b){
@@ -1329,7 +1332,7 @@ function deadlineSort(a,b){
   return ad.localeCompare(bd) || a.scheme.名前.localeCompare(b.scheme.名前,"ja");
 }
 function calculateJudgement(){
-  const result={"今すぐ":[],"こうすれば":[],"対象外":[],"締切済み":[]};
+  const result={"今すぐ":[],"次回募集待ち":[],"こうすれば":[],"対象外":[],"締切済み":[]};
   activeData.制度.forEach(function(scheme){
     const judged=judgeScheme(scheme);
     result[judged.stage].push({scheme:scheme,reasons:judged.reasons});
@@ -1432,7 +1435,7 @@ function createSchemeRow(item,stage){
   deadline.append(el("strong","","締切 "),document.createTextNode(formatDate(scheme.締切.次回締切)),el("br"),document.createTextNode(scheme.締切.公募時期));
   const reason=el("div","reason");
   if(stage!=="今すぐ"){
-    reason.append(el("strong","",stage==="こうすれば"?"不足要件":stage==="締切済み"?"募集状況":"対象外の理由"));
+    reason.append(el("strong","",stage==="こうすれば"?"不足要件":stage==="締切済み" || stage==="次回募集待ち"?"募集状況":"対象外の理由"));
     item.reasons.forEach(function(text,index){if(index) reason.append(el("br"));reason.append(document.createTextNode("・"+text));});
   }else reason.textContent="基本条件を満たしています";
   button.append(title,money,deadline,reason,el("span","chevron","⌄"));
@@ -1482,6 +1485,7 @@ function renderAll(){
   const results=document.getElementById("results");
   results.replaceChildren(
     createResultPanel("今すぐ","今すぐ候補","ready"),
+    createResultPanel("次回募集待ち","次回募集待ち","possible"),
     createResultPanel("こうすれば","こうすれば候補","possible"),
     createResultPanel("対象外","対象外","out"),
     createResultPanel("締切済み","締切済み","closed")
@@ -1581,6 +1585,7 @@ window.__test__={
   getJudgement:function(){
     return {
       "今すぐ":judgement["今すぐ"].map(function(item){return item.scheme.id;}),
+      "次回募集待ち":judgement["次回募集待ち"].map(function(item){return item.scheme.id;}),
       "こうすれば":judgement["こうすれば"].map(function(item){return item.scheme.id;}),
       "対象外":judgement["対象外"].map(function(item){return item.scheme.id;}),
       "締切済み":judgement["締切済み"].map(function(item){return item.scheme.id;})
@@ -1604,7 +1609,7 @@ function initialize(){
   }catch(error){
     profile=cloneValue(EMPTY_PROFILE);
     activeData=cloneValue(SEIDO_DATA);
-    judgement={"今すぐ":[],"こうすれば":[],"対象外":[],"締切済み":[]};
+    judgement={"今すぐ":[],"次回募集待ち":[],"こうすれば":[],"対象外":[],"締切済み":[]};
     try{renderSidebar();}catch(ignore){}
     try{renderProfileInputs();}catch(ignore){}
     try{renderAll();}catch(ignore){}
