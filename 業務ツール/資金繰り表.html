@@ -267,7 +267,7 @@
     <aside class="side" aria-label="業務ツール">
       <div class="brand">業務ツール</div>
       <div id="sidebarNav"></div>
-      <div class="foot">データはこのパソコンの中にだけ保存されます。<br>ネット通信なし。<br>画面バージョン: 2026-09-06</div>
+      <div class="foot">データはこのパソコンの中にだけ保存されます。<br>ネット通信なし。<br>画面バージョン: 2026-09-07</div>
     </aside>
 
     <main class="main">
@@ -888,7 +888,7 @@
       const saved = resolvedMapping(headers, state.columnMappings[type]);
       const words = type === 'spreadsheet'
         ? { date: ['日付', 'date'], item: ['科目', '項目', 'item'], counterpart: ['相手'], amount: ['金額', 'amount'], income: ['入金', '収入'], expense: ['出金', '支出'] }
-        : { date: ['日付', 'date'], description: ['摘要', '内容', 'description'], deposit: ['入金', '預入', 'deposit'], withdrawal: ['出金', '引出', 'withdrawal'] };
+        : { date: ['日付', 'date'], description: ['摘要', '内容', 'description'], deposit: ['入金', '預入', 'deposit'], withdrawal: ['出金', '引出', 'withdrawal'], balance: ['残高', 'balance'] };
       Object.entries(words).forEach(([role, candidates]) => { if (saved[role] === undefined || saved[role] < 0) saved[role] = guessedIndex(headers, candidates); });
       return saved;
     }
@@ -1001,6 +1001,7 @@
       const columns = resolvedMapping(parsed.headers, mapping);
       if (!hasColumn(columns.date) || !hasColumn(columns.description) || !hasColumn(columns.deposit) || !hasColumn(columns.withdrawal)) throw new Error('日付・摘要・入金・出金の列を指定してください。');
       const unreadableRows = [], entries = [];
+      let latestBalance = null;
       parsed.rows.forEach((row, index) => {
         if (row.every(value => String(value).trim() === '')) return;
         const date = parseDate(row[columns.date]);
@@ -1008,10 +1009,15 @@
         if (!date || !description) { unreadableRows.push(index + 2); return; }
         const deposit = Math.abs(numberOf(row[columns.deposit]));
         const withdrawal = Math.abs(numberOf(row[columns.withdrawal]));
+        if (hasColumn(columns.balance) && String(row[columns.balance] ?? '').trim() !== '') {
+          const candidate = { date: normalizedDate(date), sourceLine: index + 2, value: numberOf(row[columns.balance]) };
+          if (!latestBalance || candidate.date > latestBalance.date
+            || (candidate.date === latestBalance.date && candidate.sourceLine > latestBalance.sourceLine)) latestBalance = candidate;
+        }
         if (deposit) entries.push({ date, description, amount: deposit, direction: 'deposit', sourceLine: index + 2 });
         if (withdrawal) entries.push({ date, description, amount: withdrawal, direction: 'withdrawal', sourceLine: index + 2 });
       });
-      return { parsed, columns, entries, unreadableRows };
+      return { parsed, columns, entries, unreadableRows, latestBalance };
     }
     function classificationFor(description, supplied, suppliedStores = {}) {
       const suppliedValue = supplied ? ownValue(supplied, description) : undefined;
@@ -1042,6 +1048,12 @@
           resolvedStores[description] = classification.store;
           if (classification.automatic) automaticDescriptions += 1;
         });
+        let balanceUpdated = false;
+        if (account && prepared.latestBalance
+          && (options.confirmBalance === false || confirm(`${account.name}の残高を ${format(prepared.latestBalance.value)}円 に更新しますか`))) {
+          account.value = String(prepared.latestBalance.value);
+          balanceUpdated = true;
+        }
         let depositTotal = 0, withdrawalTotal = 0;
         prepared.entries.forEach(entry => {
           const subject = resolved[entry.description];
@@ -1062,7 +1074,8 @@
         const result = {
           importedRows: prepared.entries.length, depositTotal, withdrawalTotal,
           unreadableRows: prepared.unreadableRows, automaticDescriptions, descriptionCount: descriptions.length,
-          automaticRate: descriptions.length ? automaticDescriptions / descriptions.length : 1
+          automaticRate: descriptions.length ? automaticDescriptions / descriptions.length : 1,
+          balanceUpdated, balance: prepared.latestBalance ? prepared.latestBalance.value : null
         };
         if (!options.silent) showMessage(`銀行明細から${prepared.entries.length}件を取り込みました。入金 ${format(depositTotal)}円、出金 ${format(withdrawalTotal)}円${unreadableMessage(prepared.unreadableRows)}`);
         return result;
@@ -1142,8 +1155,7 @@
     function paymentClassification(category, supplied = {}) {
       const suppliedReference = ownValue(supplied, category);
       const learnedReference = ownValue(state.paymentCategoryLearning, category);
-      return paymentSubjects().find(subject => subject.name === category)
-        || paymentSubject(suppliedReference) || paymentSubject(learnedReference);
+      return paymentSubject(suppliedReference) || paymentSubject(learnedReference);
     }
     // v2はツール間で共有する安定IDを使い、masterIdを持たないv1保存行だけ従来キーを保つ。
     function paymentIdentity(row) {
@@ -1251,7 +1263,7 @@
       const isSpreadsheet = type === 'spreadsheet';
       const fields = isSpreadsheet
         ? [['date', '日付', false], ['item', '科目', false], ['counterpart', '相手（科目が空の時）', true], ['amount', '金額（正負で収支）', true], ['income', '入金', true], ['expense', '出金', true]]
-        : [['date', '日付', false], ['description', '摘要', false], ['deposit', '入金', false], ['withdrawal', '出金', false]];
+        : [['date', '日付', false], ['description', '摘要', false], ['deposit', '入金', false], ['withdrawal', '出金', false], ['balance', '残高', true]];
       const guesses = defaultIndexes(type, parsed.headers);
       const grid = create('div', { className: 'mapping-grid' }), selects = {};
       fields.forEach(([role, label, allowUnused]) => {
@@ -1312,12 +1324,13 @@
       });
       table.append(head, body);
       openModal('支払予定：カテゴリの分類', [
-        create('p', {}, 'カテゴリごとに支出・財務等の科目を割り当ててください。割り当ては次回から自動で使われます。未対応の行は取り込みません。'),
+        create('p', {}, 'カテゴリごとに支出・財務等の科目を割り当ててください。割り当ては次回から自動で使われます。'),
         table
       ], [
         { label: 'キャンセル', run: closeModal },
         { label: '確定して取り込む', run: () => {
           const classifications = Object.fromEntries(Object.entries(selects).map(([category, select]) => [category, select.value]));
+          if (Object.values(classifications).some(value => !value)) { alert('すべてのカテゴリに科目を指定してください。'); return; }
           closeModal();
           try { importPaymentsText(text, classifications); } catch (_) { /* 本文上部へ日本語で表示済み。 */ }
         } }
@@ -1741,7 +1754,7 @@
         state.viewMode = mode; save(); renderCashflow(); return mode;
       },
       importSpreadsheetCsv: (text, mapping = state.columnMappings.spreadsheet) => importSpreadsheetText(text, mapping, { silent: true }),
-      importBankCsv: (text, mapping = state.columnMappings.bank, classifications = {}, accountId = '', storeClassifications = {}) => importBankText(text, mapping, classifications, accountId, { silent: true, storeClassifications }),
+      importBankCsv: (text, mapping = state.columnMappings.bank, classifications = {}, accountId = '', storeClassifications = {}) => importBankText(text, mapping, classifications, accountId, { silent: true, confirmBalance: false, storeClassifications }),
       importSalesJson: text => importSalesText(text, { confirm: false, silent: true }),
       importPaymentsJson: (text, classifications = {}) => importPaymentsText(text, classifications, { confirm: false, silent: true }),
       getPaymentsRows: () => deepCopy(state.paymentsRows),
