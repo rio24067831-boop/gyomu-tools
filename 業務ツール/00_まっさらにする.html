@@ -71,7 +71,7 @@
     <a href="./補助金チェッカー.html"><span class="n">08</span>補助金チェッカー</a>
     <a href="./備品発注リスト.html"><span class="n">09</span>備品発注リスト</a>
     <a class="here" href="./00_まっさらにする.html"><span class="n">—</span>まっさらにする</a>
-    <div class="note">データはこのパソコンの中にだけ保存されます。ネット通信なし。<br><br>画面バージョン: 2026-09-06</div>
+    <div class="note">データはこのパソコンの中にだけ保存されます。ネット通信なし。<br><br>画面バージョン: 2026-09-07</div>
   </nav>
 
   <main class="main">
@@ -97,11 +97,11 @@
     </div>
 
     <div class="panel">
-      <h3>ここに「保存なし」しか出ないときは</h3>
+      <h3>ここが全部「まっさら」なのに、ツールを開くとデータが残っているときは</h3>
       <p class="lead" style="margin:0">ブラウザによっては、ファイルを直接開いた画面どうしで保存場所が分かれることがあります。そのときは各ツールを開いて、画面右上の<strong>「白紙に戻す」「初期化」</strong>を押してください。1本ずつ確実に空になります。</p>
       <ul class="steps">
-        <li>支払期日管理・補助金チェッカーの2本は、そもそも保存しません（開くたび空から始まります）</li>
         <li>「見本データを入れる」を押すと、また見本が入ります</li>
+        <li>補助金チェッカーの「制度データ」（更新して読み込んだ一覧）は設定扱いで、既定では残します</li>
       </ul>
     </div>
   </main>
@@ -116,9 +116,9 @@
     {name:'03 原価管理',        prefixes:['freesia-cost-']},
     {name:'04 月次PL',          prefixes:['freesia-pl-']},
     {name:'05 給与明細作成',    prefixes:['freesia_payslip']},
-    {name:'06 支払期日管理',    prefixes:[], stateless:true},
+    {name:'06 支払期日管理',    prefixes:['freesia-payment-manager']},
     {name:'07 採用管理',        prefixes:['freesia_hiring']},
-    {name:'08 補助金チェッカー',prefixes:[], stateless:true},
+    {name:'08 補助金チェッカー',prefixes:['hojokin_']},
     {name:'09 備品発注リスト',  prefixes:['freesia-supply-order']}
   ];
 
@@ -131,7 +131,8 @@
   var SETTING_KEYS = [
     'nippoBunsekiSettingsV3',                    // 01 店名・呼び方・週報の文言
     'nippoBunsekiStaffStoresV3',                 // 01 スタッフの所属店（2026-09-06追加）
-    'freesia_payslip_employee_csv_mapping_v1'    // 05 従業員CSVの列の対応づけ
+    'freesia_payslip_employee_csv_mapping_v1',   // 05 従業員CSVの列の対応づけ
+    'hojokin_seido_data_v1'                      // 08 更新して読み込んだ制度データ（会社プロフィールとは別）
   ];
 
   function wipeSettings(){
