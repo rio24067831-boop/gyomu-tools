@@ -1,0 +1,1618 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>補助金チェッカー</title>
+<!--
+  これは何か: 飲食事業者向けの補助金・助成金要件チェッカー。
+  主な機能: 会社プロフィールとの照合、3段階判定、制度データ更新、バックアップ、印刷。
+  初回起動: プロフィールは未入力（空）。「見本プロフィールを入れる」で見本を投入、「白紙に戻す」で保存内容を全消去して初期状態に戻る。
+  データの流れ: 画面入力 → localStorageへ保存 → 同梱制度データと照合 → 判定結果を画面・印刷へ出力。
+  外部送信: 一切ありません。外部通信、自動アクセス、外部リソース読み込みは行いません。
+-->
+<style>
+:root{--bg:#f4f6f7;--side:#fff;--card:#fff;--line:#e3e6e9;--ink:#1b2126;--muted:#6b737b;--accent:#1f6f6b;--accent-soft:#e6f2f1;--warn:#b4452a;--warn-soft:#fff7f4;--warn-line:#f3cfc3}
+*{box-sizing:border-box}
+html,body{margin:0;min-width:0;background:var(--bg);color:var(--ink);font-family:"Hiragino Sans","Hiragino Kaku Gothic ProN","Yu Gothic",sans-serif;-webkit-font-smoothing:antialiased}
+body{font-variant-numeric:tabular-nums}
+button,input,select{font:inherit}
+.serif{font-family:"Hiragino Mincho ProN","Yu Mincho",serif}
+.app{display:flex;min-height:100vh}
+.side{width:232px;flex:0 0 232px;background:var(--side);border-right:1px solid var(--line);padding:26px 14px;display:flex;flex-direction:column;gap:4px}
+.brand{padding:0 12px 18px;font-size:11px;letter-spacing:.22em;color:var(--muted)}
+.nav{display:flex;align-items:center;gap:12px;padding:11px 12px;border-radius:8px;color:#3d474f;font-size:14px;text-decoration:none;white-space:nowrap}
+.nav .no{font-size:11px;color:var(--muted);width:20px;letter-spacing:.05em}
+.nav.current{background:var(--accent-soft);color:var(--accent);font-weight:700}
+.nav.current .no{color:var(--accent)}
+.nav.off{color:#a3aab0}
+.nav .tag{font-size:10px;margin-left:auto;color:#a3aab0}
+.side .foot{margin-top:auto;padding:12px;font-size:11px;color:var(--muted);line-height:1.6}
+.main{min-width:0;flex:1;padding:30px 36px;display:flex;flex-direction:column;gap:22px}
+.head{display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap}
+.head-title{margin-right:auto}
+.sub{font-size:12px;color:var(--muted);letter-spacing:.08em}
+h1{margin:6px 0 0;font-size:30px;font-weight:600;letter-spacing:.06em}
+.actions{display:flex;gap:8px;flex-wrap:wrap}
+.btn{min-height:38px;padding:0 14px;border-radius:8px;border:1px solid #d9dde1;background:#fff;color:var(--ink);font-size:13px;font-weight:600;cursor:pointer}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.tiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
+.tile{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px 20px;display:flex;flex-direction:column;gap:6px;min-width:0}
+.tile .k{font-size:11px;color:var(--muted);letter-spacing:.1em}
+.tile .v{font-size:42px;line-height:1.05;letter-spacing:-.01em;overflow-wrap:anywhere}
+.tile .v.date{font-size:27px}
+.tile .v small{font-size:16px;margin-left:5px;color:var(--muted)}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.panel-bar{display:flex;align-items:center;gap:12px;padding:14px 18px;border-bottom:1px solid var(--line)}
+.panel-bar h2{margin:0;font-size:18px;font-weight:600;letter-spacing:.04em}
+.panel-meta{margin-left:auto;font-size:12px;color:var(--muted)}
+.profile-body{padding:18px}
+.profile-grid{display:grid;grid-template-columns:repeat(4,minmax(140px,1fr));gap:14px}
+.field{display:flex;flex-direction:column;gap:6px}
+.field label,.group-title{font-size:12px;color:var(--muted);font-weight:600}
+.field input,.field select{width:100%;min-height:40px;border:1px solid #d9dde1;border-radius:7px;padding:7px 10px;background:#fff;color:var(--ink)}
+.field input:focus,.field select:focus{outline:2px solid var(--accent-soft);border-color:var(--accent)}
+.form-group{margin-top:20px;padding-top:16px;border-top:1px solid var(--line)}
+.checks{display:flex;gap:10px 20px;flex-wrap:wrap;margin-top:10px}
+.check{display:flex;align-items:center;gap:7px;font-size:13px}
+.plans{display:grid;grid-template-columns:repeat(3,minmax(180px,1fr));gap:12px;margin-top:10px}
+.plan-row{display:grid;grid-template-columns:88px 1fr;align-items:center;gap:8px}
+.plan-row label{font-size:13px}
+.plan-row select{min-width:0;min-height:38px;border:1px solid #d9dde1;border-radius:7px;background:#fff;padding:6px}
+.message{display:none;margin:0;padding:11px 14px;border:1px solid var(--line);border-radius:8px;background:#fff;font-size:13px}
+.message.show{display:block}
+.message.error{color:var(--warn);background:var(--warn-soft);border-color:var(--warn-line)}
+.message.ok{color:var(--accent);background:var(--accent-soft);border-color:#c7e1df}
+.results{display:grid;gap:18px}
+.result-panel.ready{border-top:3px solid var(--accent)}
+.result-panel.possible{border-top:3px solid #82958f}
+.result-panel.out{border-top:3px solid #a7adb2}
+.result-panel.closed{border-top:3px solid var(--warn)}
+.result-list{display:flex;flex-direction:column}
+.empty{padding:24px 18px;color:var(--muted);font-size:13px}
+.scheme{border-bottom:1px solid #eef0f2}
+.scheme:last-child{border-bottom:0}
+.scheme-summary{width:100%;border:0;background:#fff;color:var(--ink);text-align:left;padding:15px 18px;cursor:pointer;display:grid;grid-template-columns:minmax(220px,2fr) minmax(130px,1fr) minmax(160px,1.4fr) minmax(160px,1.5fr) 20px;gap:16px;align-items:center}
+.scheme-summary:hover{background:#fafbfb}
+.scheme-name{font-weight:700;line-height:1.5}
+.badges{display:flex;gap:6px;flex-wrap:wrap;margin-top:5px}
+.badge{display:inline-block;padding:2px 7px;border:1px solid var(--line);border-radius:999px;font-size:10px;color:var(--muted);font-weight:600}
+.badge.warn{color:var(--warn);background:var(--warn-soft);border-color:var(--warn-line)}
+.money,.deadline,.reason{font-size:12px;line-height:1.55;color:#485159}
+.reason strong{display:block;color:var(--ink);font-size:11px;margin-bottom:2px}
+.chevron{font-size:18px;color:var(--muted);transition:transform .15s}
+.scheme.open .chevron{transform:rotate(180deg)}
+.details{display:none;background:#fafbfb;border-top:1px solid var(--line);padding:18px}
+.scheme.open .details{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px 24px}
+.detail-block h3{font-size:11px;color:var(--muted);letter-spacing:.08em;margin:0 0 6px}
+.detail-block p,.detail-block li{font-size:13px;line-height:1.7;margin:0}
+.detail-block ul{margin:0;padding-left:19px}
+.detail-block.wide{grid-column:1/-1}
+.source{overflow-wrap:anywhere;color:var(--accent)}
+.dialog{border:1px solid var(--line);border-radius:12px;padding:0;width:min(520px,calc(100vw - 30px));color:var(--ink)}
+.dialog::backdrop{background:rgba(27,33,38,.35)}
+.dialog-head{padding:16px 18px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px}
+.dialog-head h2{font-size:18px;margin:0}
+.dialog-body{padding:18px;line-height:1.7;font-size:13px}
+.dialog-actions{padding:0 18px 18px;display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
+.hidden{display:none!important}
+@media(max-width:1050px){.profile-grid{grid-template-columns:repeat(2,minmax(140px,1fr))}.scheme-summary{grid-template-columns:minmax(180px,2fr) minmax(120px,1fr) minmax(140px,1.2fr) 20px}.scheme-summary .reason{grid-column:1/-1}}
+@media(max-width:800px){.app{flex-direction:column}.side{width:auto;flex:0 0 auto;max-height:128px;overflow:auto;flex-direction:row;flex-wrap:nowrap;padding:10px;border-right:0;border-bottom:1px solid var(--line)}.brand,.side .foot{display:none}.nav{flex:0 0 auto}.main{padding:18px;gap:16px}.tiles{grid-template-columns:repeat(2,minmax(0,1fr))}.plans{grid-template-columns:repeat(2,minmax(150px,1fr))}}
+@media(max-width:520px){.main{padding:12px}.head{align-items:flex-start}.actions{width:100%}.actions .btn{flex:1 1 45%;padding:0 8px}.tile{padding:14px}.tile .v{font-size:34px}.tile .v.date{font-size:20px}.profile-grid,.plans{grid-template-columns:1fr}.scheme-summary{grid-template-columns:minmax(0,1fr) 20px;padding:14px;gap:8px}.scheme-summary>div:not(.scheme-name),.scheme-summary>.reason{grid-column:1/-1}.scheme-summary>.chevron{grid-column:2;grid-row:1}.scheme.open .details{grid-template-columns:1fr;padding:14px}.detail-block.wide{grid-column:auto}}
+@media print{@page{size:A4;margin:10mm}.side,.actions,.profile-panel,.message,.chevron{display:none!important}.main{padding:0;gap:8px}.head{display:block}.sub{font-size:9px}h1{font-size:22px}.tiles{gap:5px}.tile,.panel{border-color:#000;border-radius:0;break-inside:avoid}.tile{padding:7px}.tile .k{font-size:8px}.tile .v,.tile .v.date{font-size:17px}.panel-bar{padding:7px 9px;border-color:#000}.panel-bar h2{font-size:14px}.scheme{border-color:#000;break-inside:avoid}.scheme-summary{padding:7px 9px;grid-template-columns:2fr 1fr 1.3fr 1.5fr;gap:7px}.scheme-name{font-size:11px}.money,.deadline,.reason{font-size:9px}.details{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px 12px;padding:7px 9px;border-color:#000}.detail-block h3{font-size:8px;margin-bottom:2px}.detail-block p,.detail-block li{font-size:8px;line-height:1.35}.detail-block ul{padding-left:13px}.badge{font-size:7px;padding:1px 4px}.results{gap:7px}}
+</style>
+</head>
+<body>
+<div class="app">
+<aside class="side" id="sidebar"><div class="brand">業務ツール</div><div class="foot">データはこのパソコンの中にだけ保存されます。<br>ネット通信なし。<br>画面バージョン: 2026-09-06</div></aside>
+<main class="main">
+<header class="head">
+<div class="head-title"><div class="sub"><span id="companySub">名称未設定</span> ・ 制度データ <span id="dataUpdatedSub">2026-09-05</span> 更新</div><h1 class="serif">補助金チェッカー</h1></div>
+<div class="actions">
+<button class="btn primary" id="profileButton" type="button">会社プロフィール</button>
+<button class="btn" id="dataButton" type="button">制度データを更新</button>
+<button class="btn" id="backupButton" type="button">バックアップ</button>
+<button class="btn" id="printButton" type="button">印刷</button>
+</div>
+</header>
+<p class="message" id="message" role="status" aria-live="polite"></p>
+<p class="message error" id="freshnessMessage" role="status"></p>
+<section class="tiles" aria-label="判定概要">
+<div class="tile"><div class="k">今すぐ候補</div><div class="v serif"><span id="readyCount">0</span><small>件</small></div></div>
+<div class="tile"><div class="k">こうすれば候補</div><div class="v serif"><span id="possibleCount">0</span><small>件</small></div></div>
+<div class="tile"><div class="k">直近の締切</div><div class="v date serif" id="nearestDeadline">なし</div></div>
+<div class="tile"><div class="k">制度データ更新日</div><div class="v date serif" id="dataUpdated">―</div></div>
+</section>
+<section class="panel profile-panel" id="profilePanel">
+<div class="panel-bar"><h2 class="serif">会社プロフィール</h2><span class="panel-meta">変更内容はこのパソコンに即時保存されます</span><button class="btn" id="sampleProfileButton" type="button" style="margin-left:auto">見本プロフィールを入れる</button><button class="btn" id="resetAllButton" type="button">白紙に戻す</button></div>
+<form class="profile-body" id="profileForm">
+<div class="profile-grid">
+<div class="field"><label for="company">会社・店舗名</label><input id="company" name="company" maxlength="80"></div>
+<div class="field"><label for="gyoshu">業種</label><input id="gyoshu" name="gyoshu" maxlength="40"></div>
+<div class="field"><label for="pref">都道府県</label><input id="pref" name="pref" maxlength="20"></div>
+<div class="field"><label for="city">市区町村</label><input id="city" name="city" maxlength="40"></div>
+<div class="field"><label for="employees">従業員数</label><input id="employees" name="employees" type="number" min="0" max="1000000" step="1"></div>
+<div class="field"><label for="capital">資本金（万円）</label><input id="capital" name="capital" type="number" min="0" max="100000000" step="1"></div>
+<div class="field"><label for="founded_year">創業年</label><input id="founded_year" name="founded_year" type="number" min="1800" max="2100" step="1"></div>
+<div class="field"><label for="entity">法人／個人</label><select id="entity" name="entity"><option value="法人">法人</option><option value="個人">個人</option></select></div>
+</div>
+<div class="form-group"><div class="group-title">過去に受けた制度</div><div class="checks" id="receivedChecks"></div></div>
+<div class="form-group"><div class="group-title">この先の予定</div><div class="plans" id="planFields"></div></div>
+</form>
+</section>
+<section class="results" id="results"></section>
+</main>
+</div>
+<input class="hidden" id="dataFile" type="file" accept=".json,application/json">
+<input class="hidden" id="backupFile" type="file" accept=".json,application/json">
+<dialog class="dialog" id="backupDialog">
+<div class="dialog-head"><h2 class="serif">バックアップ</h2></div>
+<div class="dialog-body">会社プロフィールと現在の制度データをJSONファイルに保存、または保存済みファイルから復元できます。</div>
+<div class="dialog-actions"><button class="btn" id="backupClose" type="button">閉じる</button><button class="btn" id="backupImport" type="button">読み込む</button><button class="btn primary" id="backupExport" type="button">書き出す</button></div>
+</dialog>
+<script>
+"use strict";
+
+// ---- 同梱制度データ ----
+const SEIDO_DATA =
+{
+ "データ名": "補助金チェッカー制度データ",
+ "version": "20260905",
+ "更新日": "2026-09-05",
+ "対象地域": {
+  "pref": "愛知県",
+  "city": "名古屋市"
+ },
+ "制度": [
+  {
+   "id": "digital-ai-normal",
+   "名前": "デジタル化・AI導入補助金2026（通常枠）",
+   "区分": "補助金",
+   "level": "国",
+   "実施主体": "中小企業庁（デジタル化・AI導入補助金事務局）",
+   "目的": "業務の効率化や売上向上につながるITツール・AIサービスの導入費を支援する。",
+   "条件": [
+    {
+     "説明": "飲食業を営んでいる",
+     "field": "gyoshu",
+     "op": "eq",
+     "value": "飲食",
+     "fail": "対象外",
+     "不足時の行動": null
+    },
+    {
+     "説明": "IT・AIツールを導入する予定がある",
+     "field": "plan.IT導入",
+     "op": "plan",
+     "fail": "こうすれば",
+     "不足時の行動": "解決したい経営課題と導入する登録ITツールを具体化する"
+    }
+   ],
+   "補助率": "1/2以内（最低賃金近傍の事業者は2/3以内）",
+   "上限額": "5万円～450万円",
+   "締切": {
+    "次回締切": null,
+    "公募時期": "複数回公募。2026年度の最新締切は公式スケジュールで要確認",
+    "通年": false
+   },
+   "受けるための行動": [
+    "GビズIDプライムを取得する",
+    "SECURITY ACTIONの自己宣言を行う",
+    "登録IT導入支援事業者と導入計画を作る"
+   ],
+   "申請の流れ": "IT導入支援事業者と計画を作成し、電子申請する。交付決定後に契約・導入し、実績報告を行う。",
+   "注意": "旧称IT導入補助金。交付決定前の契約・支払いは対象外で、登録されたITツールのみが対象。",
+   "過去受給歴キー": "IT導入",
+   "source_url": "https://it-shien.smrj.go.jp/",
+   "checked_date": "2026-09-05",
+   "確度": "要確認"
+  },
+  {
+   "id": "shoryokuka-general-8",
+   "名前": "中小企業省力化投資補助金（一般型・第8回）",
+   "区分": "補助金",
+   "level": "国",
+   "実施主体": "中小企業庁・中小企業基盤整備機構（中小企業省力化投資補助事業事務局）",
+   "目的": "人手不足を解消するための機械・システムなど、現場に合わせた省力化投資を支援する。",
+   "条件": [
+    {
+     "説明": "飲食業を営んでいる",
+     "field": "gyoshu",
+     "op": "eq",
+     "value": "飲食",
+     "fail": "対象外",
+     "不足時の行動": null
+    },
+    {
+     "説明": "省力化の設備投資を予定している",
+     "field": "plan.設備投資",
+     "op": "plan",
+     "fail": "こうすれば",
+     "不足時の行動": "人手不足の工程と省力化設備の効果を数値で整理する"
+    }
+   ],
+   "補助率": "中小企業1/2、小規模・再生事業者2/3",
+   "上限額": "従業員5人以下750万円、6～20人1,500万円（大幅賃上げ特例あり）",
+   "締切": {
+    "次回締切": null,
+    "公募時期": "第8回は2026年9月中旬受付開始、10月中旬締切予定",
+    "通年": false
+   },
+   "受けるための行動": [
+    "GビズIDプライムを取得する",
+    "人手不足と投資効果を示す事業計画を作る",
+    "賃上げ要件を確認し従業員へ表明する"
+   ],
+   "申請の流れ": "公募回ごとに電子申請する。採択・交付決定後に発注し、実績報告と事業化状況報告を行う。",
+   "注意": "不採択となった公募回の後も、次回公募へ内容を見直して再申請できる。ただし同一公募回への再提出はできず、過去の申請・採択状況や重複申請の制限を最新公募要領で確認すること。同じ補助対象へのカタログ注文型との併用は不可。",
+   "過去受給歴キー": "省力化投資",
+   "source_url": "https://shoryokuka.smrj.go.jp/ippan/schedule/",
+   "checked_date": "2026-09-05",
+   "確度": "要確認"
+  },
+  {
+   "id": "reskilling-course",
+   "名前": "人材開発支援助成金（事業展開等リスキリング支援コース）",
+   "区分": "助成金",
+   "level": "国",
+   "実施主体": "厚生労働省・都道府県労働局",
+   "目的": "新事業やデジタル化などに必要な知識を従業員が学ぶ際の訓練費と訓練中の賃金を支援する。",
+   "条件": [
+    {
+     "説明": "飲食業を営む法人または個人事業主",
+     "field": "gyoshu",
+     "op": "eq",
+     "value": "飲食",
+     "fail": "対象外",
+     "不足時の行動": null
+    },
+    {
+     "説明": "採用・人材育成を予定している",
+     "field": "plan.採用",
+     "op": "plan",
+     "fail": "こうすれば",
+     "不足時の行動": "雇用中の従業員を対象に、事業展開やDXに必要な訓練計画を作る"
+    }
+   ],
+   "補助率": "中小企業は経費助成75%（賃金助成・設備投資加算あり）",
+   "上限額": "1事業所1年度1億円",
+   "締切": {
+    "次回締切": null,
+    "公募時期": "訓練開始日の6か月前から1か月前までに計画届を提出",
+    "通年": true
+   },
+   "受けるための行動": [
+    "事業内職業能力開発計画を作成する",
+    "職業能力開発推進者を選任する",
+    "訓練開始前に職業訓練実施計画届を提出する"
+   ],
+   "申請の流れ": "管轄労働局へ訓練前に計画届を提出し、計画どおり訓練後、期限内に支給申請する。電子申請または指定様式で手続きする。",
+   "注意": "2026年度までの期間限定コース。訓練開始後の計画届は原則対象外で、対象労働者・訓練時間・支払証憑の要件がある。",
+   "過去受給歴キー": "リスキリング",
+   "source_url": "https://www.mhlw.go.jp/stf/seisakunitsuite/bunya/38819_00009.html",
+   "checked_date": "2026-09-05",
+   "確度": "確認済"
+  },
+  {
+   "id": "jizokuka-normal-19",
+   "名前": "小規模事業者持続化補助金＜一般型 通常枠＞（第19回）",
+   "区分": "補助金",
+   "level": "国",
+   "実施主体": "中小企業庁（小規模事業者持続化補助金事務局）",
+   "目的": "小規模事業者が経営計画を作り、集客・販路開拓やそれに伴う業務改善を行う費用を支援する。",
+   "条件": [
+    {
+     "説明": "飲食業を営んでいる",
+     "field": "gyoshu",
+     "op": "eq",
+     "value": "飲食",
+     "fail": "対象外",
+     "不足時の行動": null
+    },
+    {
+     "説明": "常時使用する従業員が5人以下",
+     "field": "employees",
+     "op": "lte",
+     "value": 5,
+     "fail": "対象外",
+     "不足時の行動": null
+    },
+    {
+     "説明": "販路開拓を予定している",
+     "field": "plan.販路開拓",
+     "op": "plan",
+     "fail": "こうすれば",
+     "不足時の行動": "新規顧客を増やす具体的な販路開拓計画を作る"
+    }
+   ],
+   "補助率": "2/3（賃金引上げ特例の赤字事業者は3/4）",
+   "上限額": "50万円（特例加算により最大250万円）",
+   "締切": {
+    "次回締切": null,
+    "公募時期": "公募回ごと。次回は公式サイトで要確認",
+    "通年": false
+   },
+   "受けるための行動": [
+    "経営計画・補助事業計画を作る",
+    "地域の商工会議所から事業支援計画書の発行を受ける",
+    "GビズIDプライムを準備する"
+   ],
+   "申請の流れ": "商工会議所の確認を受け、電子申請を基本として提出する。交付決定後に事業を実施し実績報告する。",
+   "注意": "飲食業は通常、商業・サービス業の小規模要件（5人以下）。補助対象の重複や交付決定前着手に注意。",
+   "過去受給歴キー": "小規模持続化",
+   "source_url": "https://official.jizokukanb.com/wp-content/uploads/2026/04/19_%E9%80%9A%E5%B8%B8%E6%9E%A0_%E5%85%AC%E5%8B%9F%E8%A6%81%E9%A0%98_%E7%AC%AC6%E7%89%88.pdf",
+   "checked_date": "2026-09-05",
+   "確度": "要確認"
+  },
+  {
+   "id": "career-up-regular",
+   "名前": "キャリアアップ助成金（正社員化コース）",
+   "区分": "助成金",
+   "level": "国",
+   "実施主体": "厚生労働省・都道府県労働局",
+   "目的": "有期雇用などの従業員を正社員へ転換する事業主を支援する。",
+   "条件": [
+    {
+     "説明": "飲食業を営んでいる",
+     "field": "gyoshu",
+     "op": "eq",
+     "value": "飲食",
+     "fail": "対象外",
+     "不足時の行動": null
+    },
+    {
+     "説明": "採用・雇用転換を予定している",
+     "field": "plan.採用",
+     "op": "plan",
+     "fail": "こうすれば",
+     "不足時の行動": "対象従業員の正社員転換時期と転換規定を決める"
+    }
+   ],
+   "補助率": "定額",
+   "上限額": "対象労働者1人当たり最大80万円（中小企業・重点支援対象者。区分により異なる）",
+   "締切": {
+    "次回締切": null,
+    "公募時期": "取組前に計画、転換後6か月分の賃金支払い後2か月以内に申請",
+    "通年": true
+   },
+   "受けるための行動": [
+    "キャリアアップ計画を作成・提出する",
+    "就業規則に正社員転換制度を定める",
+    "転換後の賃金要件を満たす"
+   ],
+   "申請の流れ": "取組前に管轄労働局へ計画を提出し、規定に基づき転換する。6か月分の賃金支払い後に支給申請する。",
+   "注意": "対象労働者の雇用期間や賃金上昇、就業規則の事前整備など細かな要件がある。",
+   "過去受給歴キー": "キャリアアップ",
+   "source_url": "https://www.mhlw.go.jp/stf/seisakunitsuite/bunya/koyou_roudou/part_haken/jigyounushi/career.html",
+   "checked_date": "2026-09-05",
+   "確度": "要確認"
+  },
+  {
+   "id": "gyomu-kaizen-2026",
+   "名前": "令和8年度 業務改善助成金",
+   "区分": "助成金",
+   "level": "国",
+   "実施主体": "厚生労働省・都道府県労働局",
+   "目的": "事業場内の最低賃金を引き上げ、生産性を高める設備を導入する中小企業を支援する。",
+   "条件": [
+    {
+     "説明": "飲食業を営んでいる",
+     "field": "gyoshu",
+     "op": "eq",
+     "value": "飲食",
+     "fail": "対象外",
+     "不足時の行動": null
+    },
+    {
+     "説明": "従業員の賃上げを予定している",
+     "field": "plan.賃上げ",
+     "op": "plan",
+     "fail": "こうすれば",
+     "不足時の行動": "事業場内最低賃金の引上げ額と対象人数を決める"
+    },
+    {
+     "説明": "設備投資を予定している",
+     "field": "plan.設備投資",
+     "op": "plan",
+     "fail": "こうすれば",
+     "不足時の行動": "生産性向上につながる設備・システムを選ぶ"
+    }
+   ],
+   "補助率": "3/4～9/10（引上げ前の事業場内最低賃金による）",
+   "上限額": "30万円～600万円（引上げ額・人数・特例区分による）",
+   "締切": {
+    "次回締切": null,
+    "公募時期": "年度内受付。予算到達時に早期終了あり",
+    "通年": false
+   },
+   "受けるための行動": [
+    "事業場内最低賃金と対象労働者数を確認する",
+    "賃上げ計画と設備投資計画を作る",
+    "交付決定前に設備を発注しない"
+   ],
+   "申請の流れ": "愛知労働局へ紙またはJグランツで交付申請する。交付決定後に設備導入・賃上げを行い、実績報告と支給申請をする。",
+   "注意": "従業員がいない事業者は対象外。2026年度の事業完了期限は原則2027年1月31日。",
+   "過去受給歴キー": null,
+   "source_url": "https://www.mhlw.go.jp/stf/seisakunitsuite/bunya/koyou_roudou/roudoukijun/zigyonushi/shienjigyou/03.html",
+   "checked_date": "2026-09-05",
+   "確度": "確認済"
+  },
+  {
+   "id": "workstyle-hours-2026",
+   "名前": "令和8年度 働き方改革推進支援助成金（労働時間短縮・年休促進支援コース）",
+   "区分": "助成金",
+   "level": "国",
+   "実施主体": "厚生労働省・都道府県労働局",
+   "目的": "労働時間の短縮や休暇を取りやすい職場づくりに使う機器・専門家費用などを支援する。",
+   "条件": [
+    {
+     "説明": "飲食業を営んでいる",
+     "field": "gyoshu",
+     "op": "eq",
+     "value": "飲食",
+     "fail": "対象外",
+     "不足時の行動": null
+    },
+    {
+     "説明": "設備投資を予定している",
+     "field": "plan.設備投資",
+     "op": "plan",
+     "fail": "こうすれば",
+     "不足時の行動": "労働時間削減につながる設備や業務改善を計画する"
+    }
+   ],
+   "補助率": "3/4（一定の30人以下事業者は4/5）",
+   "上限額": "成果目標により最大200万円、賃上げ加算あり",
+   "締切": {
+    "次回締切": "2026-11-30",
+    "公募時期": "2026年度受付中。予算により早期終了あり",
+    "通年": false
+   },
+   "受けるための行動": [
+    "労働時間・休暇制度の成果目標を選ぶ",
+    "改善事業計画を作る",
+    "交付決定前に契約・発注しない"
+   ],
+   "申請の流れ": "愛知労働局へ交付申請（Jグランツ可）し、交付決定後に取組を行う。2027年1月31日までに実施し支給申請する。",
+   "注意": "国の予算額により11月30日より前に受付終了することがある。",
+   "過去受給歴キー": null,
+   "source_url": "https://www.mhlw.go.jp/stf/seisakunitsuite/bunya/0000120692.html",
+   "checked_date": "2026-09-05",
+   "確度": "確認済"
+  },
+  {
+   "id": "new-business-monozukuri-1",
+   "名前": "新事業進出・ものづくり商業サービス補助金（第1回）",
+   "区分": "補助金",
+   "level": "国",
+   "実施主体": "中小企業庁（新事業進出・ものづくり商業サービス補助金事務局）",
+   "目的": "革新的な商品・サービスの開発や、新しい市場・高付加価値事業へ進むための設備投資を支援する。",
+   "条件": [
+    {
+     "説明": "飲食業を営んでいる",
+     "field": "gyoshu",
+     "op": "eq",
+     "value": "飲食",
+     "fail": "対象外",
+     "不足時の行動": null
+    },
+    {
+     "説明": "設備投資を予定している",
+     "field": "plan.設備投資",
+     "op": "plan",
+     "fail": "こうすれば",
+     "不足時の行動": "新商品・新サービスまたは新市場進出に必要な設備投資を具体化する"
+    },
+    {
+     "説明": "従業員20人以下",
+     "field": "employees",
+     "op": "lte",
+     "value": 20,
+     "fail": "対象外",
+     "不足時の行動": null
+    }
+   ],
+   "補助率": "1/2（小規模事業者等は2/3となる類型あり）",
+   "上限額": "従業員20人以下は最大2,500万円（特例3,000万円）",
+   "締切": {
+    "次回締切": "2026-09-30",
+    "公募時期": "第1回申請受付は2026年8月31日～9月30日",
+    "通年": false
+   },
+   "受けるための行動": [
+    "GビズIDプライムを取得する",
+    "革新性・市場性と賃上げを含む事業計画を作る",
+    "必要に応じて経営革新計画の承認を得る"
+   ],
+   "申請の流れ": "公募サイトから電子申請する。採択・交付決定後に設備投資を行い、実績報告する。",
+   "注意": "単なる設備更新ではなく、新製品・新サービスや新市場への取組が必要。最低投資額など最新要領を確認すること。",
+   "過去受給歴キー": null,
+   "source_url": "https://www.chusho.meti.go.jp/koukai/hojyokin/kobo/2026/260630002.html",
+   "checked_date": "2026-09-05",
+   "確度": "要確認"
+  },
+  {
+   "id": "business-succession-ma-15",
+   "名前": "事業承継・M&A補助金（十五次公募・事業承継促進枠）",
+   "区分": "補助金",
+   "level": "国",
+   "実施主体": "中小企業庁（事業承継・M&A補助金事務局）",
+   "目的": "親族や従業員への事業承継に伴う店舗改装や設備投資などを支援する。",
+   "条件": [
+    {
+     "説明": "飲食業を営んでいる",
+     "field": "gyoshu",
+     "op": "eq",
+     "value": "飲食",
+     "fail": "対象外",
+     "不足時の行動": null
+    },
+    {
+     "説明": "店舗改装を予定している",
+     "field": "plan.改装",
+     "op": "plan",
+     "fail": "こうすれば",
+     "不足時の行動": "5年以内の事業承継計画と、それに必要な改装・設備を整理する"
+    }
+   ],
+   "補助率": "1/2以内（小規模事業者等は2/3以内となる場合あり）",
+   "上限額": "800万円（一定の賃上げで上乗せあり）",
+   "締切": {
+    "次回締切": null,
+    "公募時期": "十五次公募は終了。次回公募は公式サイトで要確認",
+    "通年": false
+   },
+   "受けるための行動": [
+    "GビズIDプライムを取得する",
+    "5年以内の親族内または従業員承継計画を作る",
+    "承継と設備投資の関係を整理する"
+   ],
+   "申請の流れ": "Jグランツから電子申請する。採択・交付決定後に事業を行い、証憑を添えて実績報告する。",
+   "注意": "十五次公募は2026年7月24日に終了。M&Aを予定しない事業者は対象にならない。",
+   "過去受給歴キー": null,
+   "source_url": "https://www.chusho.meti.go.jp/koukai/hojyokin/kobo/2026/260522001.html",
+   "checked_date": "2026-09-05",
+   "確度": "要確認"
+  },
+  {
+   "id": "aichi-dx-2026",
+   "名前": "2026年度 愛知県中小企業デジタル化・DX促進補助金",
+   "区分": "補助金",
+   "level": "愛知県",
+   "実施主体": "愛知県経済産業局",
+   "目的": "県内中小企業がデジタル技術を使って業務改善や新しいサービスづくりを行う費用を支援する。",
+   "条件": [
+    {
+     "説明": "愛知県内の事業者",
+     "field": "pref",
+     "op": "eq",
+     "value": "愛知県",
+     "fail": "対象外",
+     "不足時の行動": null
+    },
+    {
+     "説明": "飲食業を営んでいる",
+     "field": "gyoshu",
+     "op": "eq",
+     "value": "飲食",
+     "fail": "対象外",
+     "不足時の行動": null
+    },
+    {
+     "説明": "IT導入を予定している",
+     "field": "plan.IT導入",
+     "op": "plan",
+     "fail": "こうすれば",
+     "不足時の行動": "デジタル化で解決する経営課題と導入内容を具体化する"
+    }
+   ],
+   "補助率": "1/2以内",
+   "上限額": "200万円",
+   "締切": {
+    "次回締切": null,
+    "公募時期": "2026年度募集終了。次年度実施は要確認",
+    "通年": false
+   },
+   "受けるための行動": [
+    "デジタル化・DXの事業計画を作る",
+    "交付決定前に契約・発注しない",
+    "県の公募要領と説明会資料を確認する"
+   ],
+   "申請の流れ": "県の指定方法で公募期間内に申請し、交付決定後に事業を実施して実績報告する。",
+   "注意": "2026年度公募は終了。次年度の実施・条件は未公表。",
+   "過去受給歴キー": null,
+   "source_url": "https://www.pref.aichi.jp/press-release/aichi-pref-iot/digitalhojyokin-koubo2026.html",
+   "checked_date": "2026-09-05",
+   "確度": "要確認"
+  },
+  {
+   "id": "aichi-renewable-2026",
+   "名前": "2026年度 愛知県再生可能エネルギー設備導入支援事業費補助金",
+   "区分": "補助金",
+   "level": "愛知県",
+   "実施主体": "愛知県環境局",
+   "目的": "事業所で自家消費する太陽光発電や蓄電池などの導入を支援する。",
+   "条件": [
+    {
+     "説明": "愛知県内の事業者",
+     "field": "pref",
+     "op": "eq",
+     "value": "愛知県",
+     "fail": "対象外",
+     "不足時の行動": null
+    },
+    {
+     "説明": "設備投資を予定している",
+     "field": "plan.設備投資",
+     "op": "plan",
+     "fail": "こうすれば",
+     "不足時の行動": "店舗で自家消費する再エネ設備の導入計画を作る"
+    }
+   ],
+   "補助率": "太陽光は4万円/kW、蓄電池1/3、その他2/3（中小企業等）",
+   "上限額": "1,000万円（中小企業等）",
+   "締切": {
+    "次回締切": null,
+    "公募時期": "2026年度受付終了。例年実施の有無を要確認",
+    "通年": false
+   },
+   "受けるための行動": [
+    "自家消費量を見積もる",
+    "設備仕様と見積書を準備する",
+    "交付決定前に着工しない"
+   ],
+   "申請の流れ": "県へ申請し、交付決定後に設置する。完了後に実績報告を行う。",
+   "注意": "2026年度は7月31日で終了。FIT・FIP売電用設備は対象外。",
+   "過去受給歴キー": null,
+   "source_url": "https://www.pref.aichi.jp/press-release/saiene-shoene-hojokin2026.html",
+   "checked_date": "2026-09-05",
+   "確度": "確認済"
+  },
+  {
+   "id": "aichi-energy-saving-2026",
+   "名前": "2026年度 愛知県省エネルギー設備等導入支援事業費補助金",
+   "区分": "補助金",
+   "level": "愛知県",
+   "実施主体": "愛知県環境局",
+   "目的": "県内の中小企業が省エネ効果の高い設備へ更新する費用を支援する。",
+   "条件": [
+    {
+     "説明": "愛知県内の事業者",
+     "field": "pref",
+     "op": "eq",
+     "value": "愛知県",
+     "fail": "対象外",
+     "不足時の行動": null
+    },
+    {
+     "説明": "設備投資を予定している",
+     "field": "plan.設備投資",
+     "op": "plan",
+     "fail": "こうすれば",
+     "不足時の行動": "空調・冷蔵設備などの省エネ効果を診断して更新計画を作る"
+    }
+   ],
+   "補助率": "1/3以内",
+   "上限額": "1,000万円",
+   "締切": {
+    "次回締切": null,
+    "公募時期": "2026年度受付終了。次年度実施は要確認",
+    "通年": false
+   },
+   "受けるための行動": [
+    "省エネルギー診断を受ける",
+    "対象設備と削減効果を確認する",
+    "交付決定前に発注しない"
+   ],
+   "申請の流れ": "指定の省エネ診断を踏まえて県へ申請し、交付決定後に設備を導入して実績報告する。",
+   "注意": "2026年度受付は終了。対象設備・補助率の詳細は年度要領で再確認が必要。",
+   "過去受給歴キー": null,
+   "source_url": "https://www.pref.aichi.jp/press-release/saiene-shoene-hojokin2026.html",
+   "checked_date": "2026-09-05",
+   "確度": "要確認"
+  },
+  {
+   "id": "aichi-small-innovation-2026",
+   "名前": "2026年度 小規模事業者経営革新支援事業費補助金",
+   "区分": "補助金",
+   "level": "愛知県",
+   "実施主体": "愛知県（事務局：愛知県商工会連合会）",
+   "目的": "県の承認を受けた経営革新計画に沿う新商品開発や販路開拓を支援する。",
+   "条件": [
+    {
+     "説明": "愛知県内の事業者",
+     "field": "pref",
+     "op": "eq",
+     "value": "愛知県",
+     "fail": "対象外",
+     "不足時の行動": null
+    },
+    {
+     "説明": "飲食業で従業員5人以下",
+     "field": "employees",
+     "op": "lte",
+     "value": 5,
+     "fail": "対象外",
+     "不足時の行動": null
+    },
+    {
+     "説明": "販路開拓を予定している",
+     "field": "plan.販路開拓",
+     "op": "plan",
+     "fail": "こうすれば",
+     "不足時の行動": "経営革新計画に沿う新商品開発・販路開拓を具体化する"
+    }
+   ],
+   "補助率": "2/3",
+   "上限額": "100万円",
+   "締切": {
+    "次回締切": null,
+    "公募時期": "2026年度採択終了。次年度実施は要確認",
+    "通年": false
+   },
+   "受けるための行動": [
+    "愛知県から経営革新計画の承認を受ける",
+    "商工会・商工会議所の確認書を取得する",
+    "公募書類を準備する"
+   ],
+   "申請の流れ": "経営革新計画の承認後、商工会等の確認を受けて事務局へ申請する。採択後に事業を実施し実績報告する。",
+   "注意": "経営革新計画の承認が前提。2026年度の交付先は決定済み。",
+   "過去受給歴キー": null,
+   "source_url": "https://www.pref.aichi.jp/press-release/keikaku260717.html",
+   "checked_date": "2026-09-05",
+   "確度": "確認済"
+  },
+  {
+   "id": "aichi-innovation-project-2026",
+   "名前": "2026年度 革新事業創造事業費補助金",
+   "区分": "補助金",
+   "level": "愛知県",
+   "実施主体": "愛知県経済産業局",
+   "目的": "地域課題の解決につながる新しいビジネスを、設備・開発・人件費など幅広く支援する。",
+   "条件": [
+    {
+     "説明": "愛知県内の事業者",
+     "field": "pref",
+     "op": "eq",
+     "value": "愛知県",
+     "fail": "対象外",
+     "不足時の行動": null
+    },
+    {
+     "説明": "設備投資を予定している",
+     "field": "plan.設備投資",
+     "op": "plan",
+     "fail": "こうすれば",
+     "不足時の行動": "重点分野の社会課題を解決する革新的プロジェクトを企画する"
+    }
+   ],
+   "補助率": "中小企業2/3以内",
+   "上限額": "1,000万円",
+   "締切": {
+    "次回締切": null,
+    "公募時期": "2026年度募集終了。次年度実施は要確認",
+    "通年": false
+   },
+   "受けるための行動": [
+    "A-IDEAにプロジェクトを提案する",
+    "重点分野との関係と社会課題への効果を示す",
+    "採択後の経費計画を作る"
+   ],
+   "申請の流れ": "A-IDEAへ提案し、審査で革新事業に採択された民間プロジェクトが補助申請する。",
+   "注意": "通常の店舗改装ではなく、県の重点分野に関する革新的プロジェクトである必要がある。",
+   "過去受給歴キー": null,
+   "source_url": "https://www.pref.aichi.jp/press-release/minkanshudo-project2026.html",
+   "checked_date": "2026-09-05",
+   "確度": "確認済"
+  },
+  {
+   "id": "aichi-sidejob-talent-2026",
+   "名前": "2026年度 愛知県副業・兼業人材活用促進事業費補助金",
+   "区分": "補助金",
+   "level": "愛知県",
+   "実施主体": "愛知県労働局",
+   "目的": "中小企業が経営課題を解決するため、専門性の高い副業・兼業人材を初めて活用する費用を支援する。",
+   "条件": [
+    {
+     "説明": "愛知県内の事業者",
+     "field": "pref",
+     "op": "eq",
+     "value": "愛知県",
+     "fail": "対象外",
+     "不足時の行動": null
+    },
+    {
+     "説明": "人材採用・活用を予定している",
+     "field": "plan.採用",
+     "op": "plan",
+     "fail": "こうすれば",
+     "不足時の行動": "外部専門人材に任せる経営課題と業務を決める"
+    }
+   ],
+   "補助率": "8/10以内",
+   "上限額": "50万円",
+   "締切": {
+    "次回締切": null,
+    "公募時期": "2026年度募集期間は公式ページで要確認",
+    "通年": false
+   },
+   "受けるための行動": [
+    "愛知県プロフェッショナル人材戦略拠点へ相談する",
+    "初回活用であることを確認する",
+    "業務委託内容と経費を整理する"
+   ],
+   "申請の流れ": "県プロフェッショナル人材戦略拠点を通じて人材を探し、県へ申請する。交付決定後に契約・活用し実績報告する。",
+   "注意": "同拠点を通じた初めての副業・兼業プロ人材活用が対象。補助率・上限は公募資料の最終確認が必要。",
+   "過去受給歴キー": null,
+   "source_url": "https://www.pref.aichi.jp/soshiki/shugyo/fukugyo.html",
+   "checked_date": "2026-09-05",
+   "確度": "要確認"
+  },
+  {
+   "id": "nagoya-digital-2026",
+   "名前": "令和8年度 名古屋市中小企業デジタル活用支援補助金（通常枠）",
+   "区分": "補助金",
+   "level": "名古屋市",
+   "実施主体": "名古屋市（事務局：名古屋産業振興公社）",
+   "目的": "市内中小企業がデジタル技術で販路開拓や生産性向上に取り組む費用を支援する。",
+   "条件": [
+    {
+     "説明": "愛知県内の事業者",
+     "field": "pref",
+     "op": "eq",
+     "value": "愛知県",
+     "fail": "対象外",
+     "不足時の行動": null
+    },
+    {
+     "説明": "名古屋市内の事業者",
+     "field": "city",
+     "op": "eq",
+     "value": "名古屋市",
+     "fail": "対象外",
+     "不足時の行動": null
+    },
+    {
+     "説明": "IT導入を予定している",
+     "field": "plan.IT導入",
+     "op": "plan",
+     "fail": "こうすれば",
+     "不足時の行動": "販路開拓・生産性向上につながるソフトや機器を選ぶ"
+    }
+   ],
+   "補助率": "1/2以内",
+   "上限額": "10万円～100万円（賃上げ枠は150万円）",
+   "締切": {
+    "次回締切": null,
+    "公募時期": "2026年度募集終了。次年度実施は要確認",
+    "通年": false
+   },
+   "受けるための行動": [
+    "名古屋市新事業支援センターまたは名古屋商工会議所へ事前相談する",
+    "デジタル活用計画と見積書を作る",
+    "交付決定前に発注しない"
+   ],
+   "申請の流れ": "事前相談後、指定の方法で申請する。採択・交付決定後に導入し実績報告する。",
+   "注意": "2026年度申請は終了。賃上げ枠は給与支給総額1.5%以上増加の計画と従業員への表明が必要。",
+   "過去受給歴キー": null,
+   "source_url": "https://www.city.nagoya.jp/jigyou/sangyou/1026356/1026468/1026469.html",
+   "checked_date": "2026-09-05",
+   "確度": "確認済"
+  },
+  {
+   "id": "nagoya-energy-2026",
+   "名前": "令和8年度 名古屋市中小企業省エネルギー設備等導入補助金",
+   "区分": "補助金",
+   "level": "名古屋市",
+   "実施主体": "名古屋市環境局",
+   "目的": "市内中小企業の光熱費削減と脱炭素につながる省エネ・再エネ設備の導入を支援する。",
+   "条件": [
+    {
+     "説明": "愛知県内の事業者",
+     "field": "pref",
+     "op": "eq",
+     "value": "愛知県",
+     "fail": "対象外",
+     "不足時の行動": null
+    },
+    {
+     "説明": "名古屋市内の事業者",
+     "field": "city",
+     "op": "eq",
+     "value": "名古屋市",
+     "fail": "対象外",
+     "不足時の行動": null
+    },
+    {
+     "説明": "設備投資を予定している",
+     "field": "plan.設備投資",
+     "op": "plan",
+     "fail": "こうすれば",
+     "不足時の行動": "対象となる空調・冷凍冷蔵・照明等の更新計画を作る"
+    }
+   ],
+   "補助率": null,
+   "上限額": null,
+   "締切": {
+    "次回締切": null,
+    "公募時期": "2026年度受付終了。予算残額による追加募集の可能性あり",
+    "通年": false
+   },
+   "受けるための行動": [
+    "国指定の省エネ診断を受ける",
+    "設備の省エネ効果と見積書を準備する",
+    "追加募集・次年度公募を確認する"
+   ],
+   "申請の流れ": "募集期間内に市の受付窓口へ申請し、交付決定後に設備を導入する。完了後に実績報告する。",
+   "注意": "2026年度受付は終了。補助率・限度額は設備区分で異なるため募集要項の再確認が必要。",
+   "過去受給歴キー": null,
+   "source_url": "https://www.city.nagoya.jp/jigyou/boshu/1014251/1014255/1014256.html",
+   "checked_date": "2026-09-05",
+   "確度": "要確認"
+  },
+  {
+   "id": "nagoya-startup-2026",
+   "名前": "令和8年度 名古屋市スタートアップ企業支援補助金（通常枠）",
+   "区分": "補助金",
+   "level": "名古屋市",
+   "実施主体": "名古屋市経済局",
+   "目的": "名古屋市での創業や、創業後5年以内の中小企業による新しい取組を支援する。",
+   "条件": [
+    {
+     "説明": "愛知県内の事業者",
+     "field": "pref",
+     "op": "eq",
+     "value": "愛知県",
+     "fail": "対象外",
+     "不足時の行動": null
+    },
+    {
+     "説明": "名古屋市内の事業者",
+     "field": "city",
+     "op": "eq",
+     "value": "名古屋市",
+     "fail": "対象外",
+     "不足時の行動": null
+    },
+    {
+     "説明": "2021年以降の創業",
+     "field": "founded_year",
+     "op": "gte",
+     "value": 2021,
+     "fail": "対象外",
+     "不足時の行動": null
+    },
+    {
+     "説明": "設備投資を予定している",
+     "field": "plan.設備投資",
+     "op": "plan",
+     "fail": "こうすれば",
+     "不足時の行動": "新しい取組に必要な設備・経費を具体化する"
+    }
+   ],
+   "補助率": "1/3以内",
+   "上限額": "100万円",
+   "締切": {
+    "次回締切": null,
+    "公募時期": "年1回。2026年度募集終了、次年度実施は要確認",
+    "通年": false
+   },
+   "受けるための行動": [
+    "公的支援機関の助言を受ける",
+    "自ら補助事業計画書・経営計画書を作る",
+    "市税滞納がないことを確認する"
+   ],
+   "申請の流れ": "オンライン、郵送または持参で応募する。認定後に交付申請し、交付決定後に発注する。",
+   "注意": "新規創業者または創業後5年以内が対象。2026年度は6月1日で終了し年1回募集。",
+   "過去受給歴キー": null,
+   "source_url": "https://www.city.nagoya.jp/jigyou/sangyou/1026356/1035070/1035072/1026817.html",
+   "checked_date": "2026-09-05",
+   "確度": "要確認"
+  },
+  {
+   "id": "nagoya-customer-harassment-2026",
+   "名前": "令和8年度 名古屋市中小企業カスタマーハラスメント対策支援補助金",
+   "区分": "補助金",
+   "level": "名古屋市",
+   "実施主体": "名古屋市（事務局：名古屋産業振興公社）",
+   "目的": "カスタマーハラスメントから従業員を守り、安心して働ける環境を整える費用を支援する。",
+   "条件": [
+    {
+     "説明": "愛知県内の事業者",
+     "field": "pref",
+     "op": "eq",
+     "value": "愛知県",
+     "fail": "対象外",
+     "不足時の行動": null
+    },
+    {
+     "説明": "名古屋市内の事業者",
+     "field": "city",
+     "op": "eq",
+     "value": "名古屋市",
+     "fail": "対象外",
+     "不足時の行動": null
+    },
+    {
+     "説明": "設備投資を予定している",
+     "field": "plan.設備投資",
+     "op": "plan",
+     "fail": "こうすれば",
+     "不足時の行動": "防犯カメラ・通話録音・対応マニュアル等の対策を計画する"
+    }
+   ],
+   "補助率": "1/2以内",
+   "上限額": "5万円～30万円",
+   "締切": {
+    "次回締切": "2026-10-30",
+    "公募時期": "2026年6月22日～10月30日",
+    "通年": false
+   },
+   "受けるための行動": [
+    "カスタマーハラスメント対策方針を決める",
+    "対象経費の見積書を準備する",
+    "必要に応じて個別相談を利用する"
+   ],
+   "申請の流れ": "専用ウェブサイトの募集要項に従い申請する。交付決定後に対策を実施し実績報告する。",
+   "注意": "予算状況と対象経費を申請前に確認する。従業員を雇用していない事業者も対象。",
+   "過去受給歴キー": null,
+   "source_url": "https://www.city.nagoya.jp/jigyou/sangyou/1026356/1026425/1040789/1035725.html",
+   "checked_date": "2026-09-05",
+   "確度": "確認済"
+  },
+  {
+   "id": "nagoya-shopping-support-model-2026",
+   "名前": "令和8年度 名古屋市買い物弱者対策モデル事業補助金",
+   "区分": "補助金",
+   "level": "名古屋市",
+   "実施主体": "名古屋市経済局",
+   "目的": "指定地域で買い物に困る人へ新しい配達・販売サービスなどを提供する事業を支援する。",
+   "条件": [
+    {
+     "説明": "愛知県内の事業者",
+     "field": "pref",
+     "op": "eq",
+     "value": "愛知県",
+     "fail": "対象外",
+     "不足時の行動": null
+    },
+    {
+     "説明": "名古屋市内の事業者",
+     "field": "city",
+     "op": "eq",
+     "value": "名古屋市",
+     "fail": "対象外",
+     "不足時の行動": null
+    },
+    {
+     "説明": "販路開拓を予定している",
+     "field": "plan.販路開拓",
+     "op": "plan",
+     "fail": "こうすれば",
+     "不足時の行動": "港区野跡学区で食品等の買い物支援サービスを新設する計画を作る"
+    }
+   ],
+   "補助率": null,
+   "上限額": null,
+   "締切": {
+    "次回締切": null,
+    "公募時期": "2026年度募集終了。モデル事業の継続・次回募集は要確認",
+    "通年": false
+   },
+   "受けるための行動": [
+    "港区野跡学区で新規に行う買い物支援サービスを企画する",
+    "施設整備と運営計画を作る",
+    "募集要項で対象区域・経費を確認する"
+   ],
+   "申請の流れ": "募集要項に沿って市へ事業計画を提出する。採択・交付決定後に施設整備と運営を開始し実績報告する。",
+   "注意": "対象地域が港区野跡学区に限定される。プロフィール項目だけでは学区を判定できないため、必ず所在地・実施場所を追加確認する。",
+   "過去受給歴キー": null,
+   "source_url": "https://www.city.nagoya.jp/jigyou/sangyou/1026356/1026717/1048389/1048393.html",
+   "checked_date": "2026-09-05",
+   "確度": "要確認"
+  }
+ ]
+}
+;
+
+// ---- サイドバー項目一覧（導入済みフラグはここだけ触る) ----
+const SIDEBAR_TOOLS = [
+  { no:"01", name:"日報分析", file:"./日報分析.html", installed:true },
+  { no:"02", name:"資金繰り表", file:"./資金繰り表.html", installed:true },
+  { no:"03", name:"原価管理", file:"./原価管理.html", installed:true },
+  { no:"04", name:"月次PL", file:"./月次PL.html", installed:true },
+  { no:"05", name:"給与明細作成", file:"./給与明細作成.html", installed:true },
+  { no:"06", name:"支払期日管理", file:"./支払期日管理.html", installed:true },
+  { no:"07", name:"採用管理", file:"./採用管理.html", installed:true },
+  { no:"08", name:"補助金チェッカー", file:"./補助金チェッカー.html", installed:true },
+  { no:"09", name:"備品発注リスト", file:"./備品発注リスト.html", installed:true }
+];
+
+// ---- 定数と初期値 ----
+const STORAGE_PROFILE = "hojokin_profile_v1";
+const STORAGE_DATA = "hojokin_seido_data_v1";
+const BACKUP_KIND = "hojokin_checker_backup";
+const PLAN_NAMES = ["設備投資","採用","賃上げ","改装","IT導入","販路開拓"];
+const PLAN_VALUES = ["予定あり","検討中","なし"];
+const RECEIVED_NAMES = ["IT導入","省力化投資","リスキリング","小規模持続化","キャリアアップ"];
+const ALLOWED_FIELDS = ["gyoshu","pref","city","employees","capital","founded_year","entity"].concat(PLAN_NAMES.map(function(name){return "plan." + name;}));
+const ALLOWED_OPS = ["eq","ne","lte","gte","in","plan"];
+const REQUIRED_SCHEME_KEYS = ["id","名前","区分","level","実施主体","目的","条件","補助率","上限額","締切","受けるための行動","申請の流れ","注意","過去受給歴キー","source_url","checked_date","確度"];
+const SAMPLE_PROFILE = {
+  company:"サンプル飲食店",gyoshu:"飲食",pref:"愛知県",city:"名古屋市",
+  employees:8,capital:300,founded_year:2020,entity:"法人",
+  received:["小規模持続化"],
+  plan:{"設備投資":"なし","採用":"なし","賃上げ":"なし","改装":"なし","IT導入":"なし","販路開拓":"なし"}
+};
+// 初回起動は未入力（数値はnull=未入力を許容）。見本はボタンで任意投入
+const EMPTY_PROFILE = {
+  company:"",gyoshu:"",pref:"",city:"",
+  employees:null,capital:null,founded_year:null,entity:"法人",
+  received:[],
+  plan:{"設備投資":"なし","採用":"なし","賃上げ":"なし","改装":"なし","IT導入":"なし","販路開拓":"なし"}
+};
+let profile = cloneValue(EMPTY_PROFILE);
+let activeData = cloneValue(SEIDO_DATA);
+let judgement = {"今すぐ":[],"こうすれば":[],"対象外":[],"締切済み":[]};
+let testToday = null;
+
+// ---- 汎用DOM・データ補助 ----
+function el(tag,className,textValue){
+  const node=document.createElement(tag);
+  if(className) node.className=className;
+  if(textValue!==undefined) node.textContent=String(textValue);
+  return node;
+}
+function cloneValue(value){return JSON.parse(JSON.stringify(value));}
+function getFieldValue(object,path){
+  return path.split(".").reduce(function(value,key){return value==null?undefined:value[key];},object);
+}
+function showMessage(text,type){
+  const node=document.getElementById("message");
+  node.textContent=text;
+  node.className="message show " + (type||"ok");
+}
+function clearMessage(){
+  const node=document.getElementById("message");
+  node.textContent="";
+  node.className="message";
+}
+function formatDate(dateText){
+  if(!dateText) return "締切未定";
+  const parts=dateText.split("-");
+  return Number(parts[0]) + "/" + Number(parts[1]) + "/" + Number(parts[2]);
+}
+function displayCheckedValue(value){return value===null?"確認中（出典を確認）":value;}
+function isPlainObject(value){return value!==null && typeof value==="object" && !Array.isArray(value);}
+function isRealDate(value){
+  if(typeof value!=="string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const p=value.split("-").map(Number);
+  const d=new Date(Date.UTC(p[0],p[1]-1,p[2]));
+  return d.getUTCFullYear()===p[0] && d.getUTCMonth()===p[1]-1 && d.getUTCDate()===p[2];
+}
+function todayText(){
+  if(testToday) return testToday;
+  const now=new Date();
+  return [now.getFullYear(),String(now.getMonth()+1).padStart(2,"0"),String(now.getDate()).padStart(2,"0")].join("-");
+}
+function dayNumber(dateText){
+  const p=dateText.split("-").map(Number);
+  return Date.UTC(p[0],p[1]-1,p[2])/86400000;
+}
+function daysFromToday(dateText){return dayNumber(dateText)-dayNumber(todayText());}
+function isFiniteInRange(value,min,max,integerOnly){
+  return typeof value==="number" && Number.isFinite(value) && value>=min && value<=max && (!integerOnly || Number.isInteger(value));
+}
+
+// ---- 型検証 ----
+function validateProfile(candidate){
+  if(!isPlainObject(candidate)) throw new Error("会社プロフィールがオブジェクトではありません。");
+  const textRules=[["company",80],["gyoshu",40],["pref",20],["city",40]];
+  textRules.forEach(function(rule){
+    if(typeof candidate[rule[0]]!=="string" || candidate[rule[0]].length>rule[1]) throw new Error(rule[0] + "の値が不正です。");
+  });
+  if(candidate.employees!==null && !isFiniteInRange(candidate.employees,0,1000000,true)) throw new Error("従業員数は0～1,000,000の整数で指定してください（未入力可）。");
+  if(candidate.capital!==null && !isFiniteInRange(candidate.capital,0,100000000,true)) throw new Error("資本金は0～100,000,000万円の整数で指定してください（未入力可）。");
+  if(candidate.founded_year!==null && !isFiniteInRange(candidate.founded_year,1800,2100,true)) throw new Error("創業年は1800～2100年の整数で指定してください（未入力可）。");
+  if(!["法人","個人"].includes(candidate.entity)) throw new Error("法人／個人の値が不正です。");
+  if(!Array.isArray(candidate.received) || candidate.received.some(function(v){return !RECEIVED_NAMES.includes(v);})) throw new Error("過去受給歴の値が不正です。");
+  if(!isPlainObject(candidate.plan) || PLAN_NAMES.some(function(name){return !PLAN_VALUES.includes(candidate.plan[name]);})) throw new Error("予定の値が不正です。");
+  return true;
+}
+function validateCondition(condition,schemeIndex,conditionIndex){
+  if(!isPlainObject(condition)) throw new Error("制度" + (schemeIndex+1) + "の条件" + (conditionIndex+1) + "が不正です。");
+  if(typeof condition.field!=="string" || !ALLOWED_FIELDS.includes(condition.field)) throw new Error("制度" + (schemeIndex+1) + "の条件fieldが語彙外です。");
+  if(typeof condition.op!=="string" || !ALLOWED_OPS.includes(condition.op)) throw new Error("制度" + (schemeIndex+1) + "の条件opが語彙外です。");
+  if(typeof condition.説明!=="string" || !["対象外","こうすれば"].includes(condition.fail)) throw new Error("制度" + (schemeIndex+1) + "の条件説明またはfailが不正です。");
+  if(condition.op==="plan" && !condition.field.startsWith("plan.")) throw new Error("plan条件のfieldが不正です。");
+  if(["lte","gte"].includes(condition.op) && (typeof condition.value!=="number" || !Number.isFinite(condition.value))) throw new Error("数値比較条件のvalueが有限数ではありません。");
+  if(condition.op==="in" && !Array.isArray(condition.value)) throw new Error("in条件のvalueが配列ではありません。");
+  if(condition.不足時の行動!==null && typeof condition.不足時の行動!=="string") throw new Error("不足時の行動が文字列またはnullではありません。");
+}
+function validateSeidoData(candidate){
+  if(!isPlainObject(candidate)) throw new Error("制度データ全体がオブジェクトではありません。");
+  if(typeof candidate.データ名!=="string" || typeof candidate.version!=="string" || !isRealDate(candidate.更新日) || !isPlainObject(candidate.対象地域)) throw new Error("制度データの基本情報が不正です。");
+  if(!Array.isArray(candidate.制度)) throw new Error("制度は配列で指定してください。");
+  const ids=new Set();
+  candidate.制度.forEach(function(scheme,index){
+    if(!isPlainObject(scheme)) throw new Error("制度" + (index+1) + "がオブジェクトではありません。");
+    REQUIRED_SCHEME_KEYS.forEach(function(key){if(!Object.prototype.hasOwnProperty.call(scheme,key)) throw new Error("制度" + (index+1) + "に必須キー「" + key + "」がありません。");});
+    if(typeof scheme.id!=="string" || !scheme.id || ids.has(scheme.id)) throw new Error("制度" + (index+1) + "のidが空または重複しています。");
+    ids.add(scheme.id);
+    ["名前","区分","level","実施主体","目的","申請の流れ","注意","source_url","checked_date","確度"].forEach(function(key){if(typeof scheme[key]!=="string") throw new Error("制度「" + scheme.id + "」の" + key + "が文字列ではありません。");});
+    ["補助率","上限額","過去受給歴キー"].forEach(function(key){if(scheme[key]!==null && typeof scheme[key]!=="string") throw new Error("制度「" + scheme.id + "」の" + key + "が文字列またはnullではありません。");});
+    if(!isRealDate(scheme.checked_date)) throw new Error("制度「" + scheme.id + "」の確認日が実在する日付ではありません。");
+    if(!Array.isArray(scheme.条件)) throw new Error("制度「" + scheme.id + "」の条件が配列ではありません。");
+    scheme.条件.forEach(function(c,ci){validateCondition(c,index,ci);});
+    if(!Array.isArray(scheme.受けるための行動) || scheme.受けるための行動.some(function(v){return typeof v!=="string";})) throw new Error("制度「" + scheme.id + "」の行動が不正です。");
+    if(!isPlainObject(scheme.締切) || !Object.prototype.hasOwnProperty.call(scheme.締切,"次回締切") || typeof scheme.締切.公募時期!=="string" || typeof scheme.締切.通年!=="boolean") throw new Error("制度「" + scheme.id + "」の締切情報が不正です。");
+    if(scheme.締切.次回締切!==null && !isRealDate(scheme.締切.次回締切)) throw new Error("制度「" + scheme.id + "」の締切日が実在する日付ではありません。");
+  });
+  return true;
+}
+function validateBackup(candidate){
+  if(!isPlainObject(candidate) || candidate.kind!==BACKUP_KIND || candidate.version!==1) throw new Error("この補助金チェッカーのバックアップではありません。");
+  validateProfile(candidate.profile);
+  validateSeidoData(candidate.seidoData);
+  return true;
+}
+
+// ---- 保存と復元 ----
+function saveProfile(){
+  try{localStorage.setItem(STORAGE_PROFILE,JSON.stringify(profile));}
+  catch(error){showMessage("会社プロフィールを保存できませんでした。このブラウザの保存設定を確認してください。","error");}
+}
+function saveData(){
+  try{localStorage.setItem(STORAGE_DATA,JSON.stringify(activeData));}
+  catch(error){throw new Error("制度データをこのブラウザに保存できませんでした。");}
+}
+function restoreStorage(){
+  try{
+    const storedProfile=localStorage.getItem(STORAGE_PROFILE);
+    if(storedProfile){const parsed=JSON.parse(storedProfile);validateProfile(parsed);profile=parsed;}
+  }catch(error){
+    profile=cloneValue(EMPTY_PROFILE);
+    try{localStorage.removeItem(STORAGE_PROFILE);}catch(ignore){}
+    showMessage("保存されていた会社プロフィールが壊れていたため、未入力の状態に戻しました。","error");
+  }
+  try{
+    const storedData=localStorage.getItem(STORAGE_DATA);
+    if(storedData){const parsed=JSON.parse(storedData);validateSeidoData(parsed);activeData=parsed;}
+  }catch(error){
+    activeData=cloneValue(SEIDO_DATA);
+    try{localStorage.removeItem(STORAGE_DATA);}catch(ignore){}
+    showMessage("保存されていた制度データが壊れていたため、同梱データに戻しました。","error");
+  }
+}
+
+// ---- 判定 ----
+function compareCondition(actual,condition){
+  switch(condition.op){
+    case "eq": return actual===condition.value;
+    case "ne": return actual!==condition.value;
+    case "lte": return typeof actual==="number" && actual<=condition.value;
+    case "gte": return typeof actual==="number" && actual>=condition.value;
+    case "in": return Array.isArray(condition.value) && condition.value.includes(actual);
+    default:return false;
+  }
+}
+function planLabel(field){return field.slice("plan.".length);}
+function judgeScheme(scheme){
+  if(scheme.締切.次回締切 && daysFromToday(scheme.締切.次回締切)<0){
+    return {stage:"締切済み",reasons:["募集終了（"+scheme.締切.次回締切+"）。次回公募は更新データで反映"]};
+  }
+  const outReasons=[];
+  const missing=[];
+  scheme.条件.forEach(function(condition){
+    const actual=getFieldValue(profile,condition.field);
+    if(condition.op==="plan"){
+      if(actual==="検討中") missing.push(condition.不足時の行動 || condition.説明);
+      if(actual==="なし") outReasons.push(planLabel(condition.field) + "の予定がない");
+      return;
+    }
+    if(!compareCondition(actual,condition)){
+      if(condition.fail==="対象外") outReasons.push(condition.説明);
+      else missing.push(condition.不足時の行動 || condition.説明);
+    }
+  });
+  if(outReasons.length) return {stage:"対象外",reasons:outReasons};
+  if(missing.length) return {stage:"こうすれば",reasons:missing};
+  return {stage:"今すぐ",reasons:[]};
+}
+function deadlineSort(a,b){
+  const ad=a.scheme.締切.次回締切;
+  const bd=b.scheme.締切.次回締切;
+  if(ad===null && bd===null) return a.scheme.名前.localeCompare(b.scheme.名前,"ja");
+  if(ad===null) return 1;
+  if(bd===null) return -1;
+  return ad.localeCompare(bd) || a.scheme.名前.localeCompare(b.scheme.名前,"ja");
+}
+function calculateJudgement(){
+  const result={"今すぐ":[],"こうすれば":[],"対象外":[],"締切済み":[]};
+  activeData.制度.forEach(function(scheme){
+    const judged=judgeScheme(scheme);
+    result[judged.stage].push({scheme:scheme,reasons:judged.reasons});
+  });
+  Object.keys(result).forEach(function(key){result[key].sort(deadlineSort);});
+  judgement=result;
+  return result;
+}
+
+// ---- プロフィール画面 ----
+function renderSidebar(){
+  const sidebar=document.getElementById("sidebar");
+  const foot=sidebar.querySelector(".foot");
+  sidebar.querySelectorAll("[data-tool-nav]").forEach(function(node){node.remove();});
+  SIDEBAR_TOOLS.forEach(function(tool){
+    const link=el("a","nav");
+    link.dataset.toolNav="true";
+    link.href=tool.file;
+    if(!tool.installed) link.classList.add("off");
+    if(tool.no==="08"){link.classList.remove("off");link.classList.add("current");link.setAttribute("aria-current","page");}
+    link.append(el("span","no",tool.no),document.createTextNode(tool.name));
+    if(!tool.installed && tool.no!=="08") link.append(el("span","tag","未導入"));
+    sidebar.insertBefore(link,foot);
+  });
+}
+function renderProfileInputs(){
+  ["company","gyoshu","pref","city","employees","capital","founded_year","entity"].forEach(function(name){
+    document.getElementById(name).value=profile[name]==null?"":profile[name];
+  });
+  const checks=document.getElementById("receivedChecks");
+  checks.replaceChildren();
+  RECEIVED_NAMES.forEach(function(name){
+    const label=el("label","check");
+    const input=el("input");
+    input.type="checkbox";input.name="received";input.value=name;input.checked=profile.received.includes(name);
+    label.append(input,document.createTextNode(name));
+    checks.append(label);
+  });
+  const plans=document.getElementById("planFields");
+  plans.replaceChildren();
+  PLAN_NAMES.forEach(function(name){
+    const row=el("div","plan-row");
+    const label=el("label","",name);
+    label.htmlFor="plan-" + name;
+    const select=el("select");
+    select.id="plan-" + name;select.dataset.plan=name;
+    PLAN_VALUES.forEach(function(value){const option=el("option","",value);option.value=value;select.append(option);});
+    select.value=profile.plan[name];
+    row.append(label,select);plans.append(row);
+  });
+}
+function readProfileForm(){
+  const next=cloneValue(profile);
+  ["company","gyoshu","pref","city"].forEach(function(name){next[name]=document.getElementById(name).value.trim();});
+  ["employees","capital","founded_year"].forEach(function(name){
+    const raw=document.getElementById(name).value.trim();
+    next[name]=raw===""?null:Number(raw);
+  });
+  next.entity=document.getElementById("entity").value;
+  next.received=Array.from(document.querySelectorAll('input[name="received"]:checked')).map(function(node){return node.value;});
+  PLAN_NAMES.forEach(function(name){next.plan[name]=document.getElementById("plan-"+name).value;});
+  validateProfile(next);
+  return next;
+}
+function profileChanged(){
+  clearMessage();
+  try{
+    profile=readProfileForm();
+    saveProfile();
+    renderAll();
+  }catch(error){showMessage(error.message,"error");}
+}
+
+// ---- 判定結果画面 ----
+function addDetail(parent,title,value,wide){
+  const block=el("div","detail-block" + (wide?" wide":""));
+  block.append(el("h3","",title));
+  if(Array.isArray(value)){
+    const list=el("ul");
+    value.forEach(function(item){list.append(el("li","",item));});
+    block.append(list);
+  }else block.append(el("p","",value==null?"―":value));
+  parent.append(block);
+}
+function createSchemeRow(item,stage){
+  const scheme=item.scheme;
+  const article=el("article","scheme");
+  const button=el("button","scheme-summary");
+  button.type="button";button.setAttribute("aria-expanded","false");
+  const title=el("div","scheme-name",scheme.名前);
+  const badges=el("div","badges");
+  badges.append(el("span","badge",scheme.区分),el("span","badge",scheme.level));
+  if(scheme.確度==="要確認") badges.append(el("span","badge warn","要確認"));
+  if(scheme.締切.次回締切===null) badges.append(el("span","badge warn","要確認（次回公募日未定）"));
+  if(stage==="今すぐ" && scheme.締切.次回締切 && daysFromToday(scheme.締切.次回締切)<=14) badges.append(el("span","badge warn","締切間近"));
+  title.append(badges);
+  const money=el("div","money");
+  money.append(el("strong","","補助率 "),document.createTextNode(displayCheckedValue(scheme.補助率)),el("br"),el("strong","","上限 "),document.createTextNode(displayCheckedValue(scheme.上限額)));
+  const deadline=el("div","deadline");
+  deadline.append(el("strong","","締切 "),document.createTextNode(formatDate(scheme.締切.次回締切)),el("br"),document.createTextNode(scheme.締切.公募時期));
+  const reason=el("div","reason");
+  if(stage!=="今すぐ"){
+    reason.append(el("strong","",stage==="こうすれば"?"不足要件":stage==="締切済み"?"募集状況":"対象外の理由"));
+    item.reasons.forEach(function(text,index){if(index) reason.append(el("br"));reason.append(document.createTextNode("・"+text));});
+  }else reason.textContent="基本条件を満たしています";
+  button.append(title,money,deadline,reason,el("span","chevron","⌄"));
+  const details=el("div","details");
+  addDetail(details,"目的",scheme.目的,true);
+  addDetail(details,"補助率",displayCheckedValue(scheme.補助率),false);
+  addDetail(details,"上限額",displayCheckedValue(scheme.上限額),false);
+  addDetail(details,"受けるための行動",scheme.受けるための行動,false);
+  addDetail(details,"申請の流れ",scheme.申請の流れ,false);
+  addDetail(details,"注意",scheme.注意,true);
+  const sourceBlock=el("div","detail-block wide");
+  sourceBlock.append(el("h3","","出典URL"));
+  const link=el("a","source",scheme.source_url);link.href=scheme.source_url;link.target="_blank";link.rel="noopener noreferrer";
+  sourceBlock.append(link,document.createTextNode("　確認日: "+scheme.checked_date));
+  details.append(sourceBlock);
+  button.addEventListener("click",function(){const open=article.classList.toggle("open");button.setAttribute("aria-expanded",String(open));});
+  article.append(button,details);
+  return article;
+}
+function createResultPanel(stage,title,className){
+  const panel=el("section","panel result-panel "+className);
+  const bar=el("div","panel-bar");
+  bar.append(el("h2","serif",title),el("span","panel-meta",judgement[stage].length+"件"));
+  const list=el("div","result-list");
+  if(!judgement[stage].length) list.append(el("div","empty","該当する制度はありません。"));
+  judgement[stage].forEach(function(item){list.append(createSchemeRow(item,stage));});
+  panel.append(bar,list);
+  return panel;
+}
+function renderAll(){
+  calculateJudgement();
+  document.getElementById("companySub").textContent=profile.company || "名称未設定";
+  document.getElementById("dataUpdatedSub").textContent=activeData.更新日;
+  document.getElementById("readyCount").textContent=judgement["今すぐ"].length;
+  document.getElementById("possibleCount").textContent=judgement["こうすれば"].length;
+  document.getElementById("dataUpdated").textContent=formatDate(activeData.更新日);
+  const freshnessMessage=document.getElementById("freshnessMessage");
+  if(daysFromToday(activeData.更新日)<-90){
+    freshnessMessage.textContent="制度データが古い可能性があります（更新日: "+formatDate(activeData.更新日)+"）。更新ファイルを読み込んでください";
+    freshnessMessage.classList.add("show");
+  }else{
+    freshnessMessage.textContent="";
+    freshnessMessage.classList.remove("show");
+  }
+  const allDates=activeData.制度.map(function(scheme){return scheme.締切.次回締切;}).filter(function(date){return date && daysFromToday(date)>=0;}).sort();
+  document.getElementById("nearestDeadline").textContent=allDates.length?formatDate(allDates[0]):"なし";
+  const results=document.getElementById("results");
+  results.replaceChildren(
+    createResultPanel("今すぐ","今すぐ候補","ready"),
+    createResultPanel("こうすれば","こうすれば候補","possible"),
+    createResultPanel("対象外","対象外","out"),
+    createResultPanel("締切済み","締切済み","closed")
+  );
+}
+
+// ---- JSON読み込みとバックアップ ----
+function readJsonFile(file,onSuccess){
+  if(!file) return;
+  const reader=new FileReader();
+  reader.addEventListener("load",function(){
+    try{onSuccess(JSON.parse(String(reader.result)));}
+    catch(error){showMessage("JSONを読み込めませんでした。既存データは変更していません。理由: "+error.message,"error");}
+  });
+  reader.addEventListener("error",function(){showMessage("ファイルを読み込めませんでした。既存データは変更していません。","error");});
+  reader.readAsText(file,"UTF-8");
+}
+function downloadJson(filename,value){
+  const blob=new Blob([JSON.stringify(value,null,2)],{type:"application/json"});
+  const url=URL.createObjectURL(blob);
+  const link=el("a");link.href=url;link.download=filename;document.body.append(link);link.click();link.remove();
+  setTimeout(function(){URL.revokeObjectURL(url);},0);
+}
+function makeBackup(){
+  return {kind:BACKUP_KIND,version:1,createdAt:new Date().toISOString(),profile:cloneValue(profile),seidoData:cloneValue(activeData)};
+}
+function importSeido(candidate){
+  validateSeidoData(candidate);
+  const oldData=activeData;
+  activeData=cloneValue(candidate);
+  try{saveData();}
+  catch(error){activeData=oldData;throw error;}
+  renderAll();
+}
+function importBackup(candidate){
+  validateBackup(candidate);
+  const oldProfile=profile,oldData=activeData;
+  profile=cloneValue(candidate.profile);activeData=cloneValue(candidate.seidoData);
+  try{
+    localStorage.setItem(STORAGE_PROFILE,JSON.stringify(profile));
+    localStorage.setItem(STORAGE_DATA,JSON.stringify(activeData));
+  }catch(error){
+    profile=oldProfile;activeData=oldData;
+    throw new Error("バックアップをこのブラウザに保存できませんでした。");
+  }
+  renderProfileInputs();renderAll();
+}
+
+// ---- イベントと起動 ----
+function bindEvents(){
+  document.getElementById("profileButton").addEventListener("click",function(){document.getElementById("profilePanel").scrollIntoView({behavior:"smooth",block:"start"});});
+  document.getElementById("dataButton").addEventListener("click",function(){document.getElementById("dataFile").click();});
+  document.getElementById("dataFile").addEventListener("change",function(event){
+    readJsonFile(event.target.files[0],function(candidate){
+      try{importSeido(candidate);showMessage("制度データを更新しました（"+candidate.制度.length+"件）。","ok");}
+      catch(error){showMessage("制度データを更新できません。既存データは変更していません。理由: "+error.message,"error");}
+    });
+    event.target.value="";
+  });
+  document.getElementById("sampleProfileButton").addEventListener("click",function(){
+    profile=cloneValue(SAMPLE_PROFILE);
+    saveProfile();renderProfileInputs();renderAll();
+    showMessage("見本プロフィールを入れました。実際の内容に書き換えてください。","ok");
+  });
+  document.getElementById("resetAllButton").addEventListener("click",function(){
+    if(!window.confirm("保存されているプロフィールと読み込み済みの制度データを全て消して、白紙に戻します。よろしいですか？")) return;
+    try{localStorage.removeItem(STORAGE_PROFILE);localStorage.removeItem(STORAGE_DATA);}catch(ignore){}
+    profile=cloneValue(EMPTY_PROFILE);
+    activeData=cloneValue(SEIDO_DATA);
+    renderProfileInputs();renderAll();
+    showMessage("白紙に戻しました。プロフィールは未入力、制度データは同梱の状態です。","ok");
+  });
+  const dialog=document.getElementById("backupDialog");
+  document.getElementById("backupButton").addEventListener("click",function(){dialog.showModal();});
+  document.getElementById("backupClose").addEventListener("click",function(){dialog.close();});
+  document.getElementById("backupExport").addEventListener("click",function(){downloadJson("補助金チェッカー_バックアップ.json",makeBackup());dialog.close();showMessage("バックアップを書き出しました。","ok");});
+  document.getElementById("backupImport").addEventListener("click",function(){dialog.close();document.getElementById("backupFile").click();});
+  document.getElementById("backupFile").addEventListener("change",function(event){
+    readJsonFile(event.target.files[0],function(candidate){
+      try{importBackup(candidate);showMessage("バックアップを復元しました。","ok");}
+      catch(error){showMessage("バックアップを復元できません。既存データは変更していません。理由: "+error.message,"error");}
+    });
+    event.target.value="";
+  });
+  document.getElementById("printButton").addEventListener("click",function(){window.print();});
+  document.getElementById("profileForm").addEventListener("change",profileChanged);
+}
+
+// ---- 検収用フック ----
+window.__test__={
+  getBackup:function(){return makeBackup();},
+  setProfile:function(object){
+    const next=Object.assign(cloneValue(profile),cloneValue(object||{}));
+    if(object && object.plan) next.plan=Object.assign({},profile.plan,cloneValue(object.plan));
+    validateProfile(next);profile=next;saveProfile();renderProfileInputs();renderAll();
+  },
+  getJudgement:function(){
+    return {
+      "今すぐ":judgement["今すぐ"].map(function(item){return item.scheme.id;}),
+      "こうすれば":judgement["こうすれば"].map(function(item){return item.scheme.id;}),
+      "対象外":judgement["対象外"].map(function(item){return item.scheme.id;}),
+      "締切済み":judgement["締切済み"].map(function(item){return item.scheme.id;})
+    };
+  },
+  setToday:function(dateText){
+    if(dateText!==undefined && dateText!==null && !isRealDate(dateText)) throw new Error("今日の日付はYYYY-MM-DD形式の実在する日付で指定してください。");
+    testToday=dateText||null;
+    renderAll();
+  }
+};
+
+function initialize(){
+  try{
+    validateSeidoData(SEIDO_DATA);
+    restoreStorage();
+    renderSidebar();
+    renderProfileInputs();
+    renderAll();
+    bindEvents();
+  }catch(error){
+    profile=cloneValue(EMPTY_PROFILE);
+    activeData=cloneValue(SEIDO_DATA);
+    judgement={"今すぐ":[],"こうすれば":[],"対象外":[],"締切済み":[]};
+    try{renderSidebar();}catch(ignore){}
+    try{renderProfileInputs();}catch(ignore){}
+    try{renderAll();}catch(ignore){}
+    try{bindEvents();}catch(ignore){}
+    showMessage("起動時にエラーが発生したため、未入力の初期状態で表示しました。理由: "+error.message,"error");
+  }
+}
+initialize();
+</script>
+</body>
+</html>

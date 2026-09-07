@@ -1,0 +1,1153 @@
+<!--
+  原価管理
+  このファイルは、飲食店のメニュー別原価を管理する単一HTMLのツールです。
+
+  主な機能:
+  - メニューごとの原価・原価率・粗利額の計算、30%基準の警告と逆算売価
+  - 食材とメニューの追加・編集・削除、レシピ編集、原価カード表示
+  - CSV・表貼り付けによるメニュー/食材の一括取り込み、プレビュー、直前1回の取り消し
+  - 仕入値履歴・全定義のブラウザ内保存、v3バックアップ（v1/v2読込対応）
+  - 初回起動は空。「見本データを入れる」で架空の居酒屋10品を投入、「白紙に戻す」で空に戻す
+
+  データの流れ:
+  空の状態（見本投入は任意） / CSV・貼り付け / バックアップJSON → 型検証 → 画面表示・編集 → localStorage保存 → バックアップJSON
+
+  外部API・外部ライブラリ・外部送信は一切ありません。
+  入力内容は、この端末のブラウザ内と利用者が書き出すJSONファイルだけに保存されます。
+-->
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>原価管理（サンプル）</title>
+  <style>
+    /* ---- 共通デザインv1：基本色・文字・画面構造 ---- */
+    :root {
+      --bg: #f4f6f7;
+      --side: #ffffff;
+      --card: #ffffff;
+      --line: #e3e6e9;
+      --row-line: #eef0f2;
+      --ink: #1b2126;
+      --muted: #6b737b;
+      --accent: #1f6f6b;
+      --accent-soft: #e6f2f1;
+      --warn: #b4452a;
+      --warn-soft: #fff7f4;
+      --warn-line: #f3cfc3;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic", "Noto Sans JP", sans-serif;
+      line-height: 1.55;
+      -webkit-font-smoothing: antialiased;
+      font-variant-numeric: tabular-nums;
+    }
+    button, input, select, textarea { font: inherit; }
+    h1, h2, .tile-value, .rate {
+      font-family: "Hiragino Mincho ProN", "Yu Mincho", "Noto Serif JP", serif;
+      letter-spacing: .06em;
+    }
+    h1 { margin: 6px 0 0; font-size: 30px; font-weight: 600; line-height: 1.2; }
+    h2 { margin: 0; font-size: 18px; font-weight: 600; }
+    .app { display: flex; min-height: 100vh; }
+    .side {
+      width: 232px;
+      flex: 0 0 232px;
+      padding: 26px 14px;
+      background: var(--side);
+      border-right: 1px solid var(--line);
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .brand { padding: 0 12px 18px; color: var(--muted); font-size: 11px; letter-spacing: .22em; }
+    .nav { display: flex; align-items: center; gap: 12px; padding: 11px 12px; border-radius: 8px; color: #3d474f; font-size: 14px; text-decoration: none; white-space: nowrap; }
+    .nav .no { width: 20px; color: var(--muted); font-size: 11px; letter-spacing: .05em; }
+    .nav.on { background: var(--accent-soft); color: var(--accent); font-weight: 700; }
+    .nav.on .no { color: var(--accent); }
+    .nav.off { color: #a3aab0; }
+    .nav.off .tag { margin-left: auto; color: #a3aab0; font-size: 10px; }
+    .side .foot { margin-top: auto; padding: 12px; color: var(--muted); font-size: 11px; line-height: 1.6; }
+    .main { min-width: 0; flex-grow: 1; padding: 30px 36px 46px; display: flex; flex-direction: column; gap: 22px; }
+    .head { display: flex; align-items: flex-end; gap: 16px; }
+    .head-copy { min-width: max-content; }
+    .head .sub { color: var(--muted); font-size: 12px; letter-spacing: .1em; }
+    .action-buttons { margin-left: auto; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+    .action-button {
+      min-height: 38px;
+      padding: 0 16px;
+      border: 1px solid #d9dde1;
+      border-radius: 8px;
+      background: var(--card);
+      color: var(--ink);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .action-button:hover { border-color: var(--accent); color: var(--accent); }
+    .action-button:disabled { cursor: not-allowed; opacity: .45; }
+    .action-button.primary { border-color: var(--accent); background: var(--accent); color: #ffffff; font-weight: 700; }
+    .small-button { min-height: 32px; padding: 0 10px; }
+    .danger-button { border-color: var(--warn-line); color: var(--warn); }
+    .tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+    .tile { min-width: 0; padding: 18px 20px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); display: flex; flex-direction: column; gap: 6px; }
+    .tile-key { color: var(--muted); font-size: 11px; letter-spacing: .12em; }
+    .tile-value { font-size: 42px; line-height: 1.05; white-space: nowrap; }
+    .tile-value small { margin-left: 6px; color: var(--muted); font-family: inherit; font-size: 16px; }
+    .tile.warn { border-color: var(--warn-line); background: var(--warn-soft); }
+    .tile.warn .tile-key, .tile.warn .tile-value, .tile.warn small { color: var(--warn); }
+    .tile-note { min-height: 1.4em; color: var(--muted); font-size: 11px; }
+    .empty-hint { padding: 26px 14px; color: var(--muted); text-align: center; }
+    .threshold { display: flex; align-items: center; gap: 7px; }
+    .threshold input { width: 80px; padding: 3px 7px; border: 1px solid var(--line); border-radius: 8px; background: #ffffff; color: var(--ink); text-align: right; }
+    .notice { display: none; padding: 10px 14px; border: 1px solid var(--warn-line); border-radius: 8px; background: var(--warn-soft); color: var(--warn); font-weight: 700; }
+    .notice.visible { display: block; }
+    /* ---- 共通パネル・表 ---- */
+    .panel, .section, .detail-card { border: 1px solid var(--line); border-radius: 12px; background: var(--card); overflow: hidden; }
+    .panel { display: none; }
+    .panel.visible, .detail-card.visible { display: block; }
+    .section { margin: 0; }
+    .panel-head, .section-title, .card-head { min-height: 58px; padding: 14px 18px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+    .panel > :not(.panel-head), .section > :not(.section-title):not(.table-wrap):not(.detail-card), .detail-card > :not(.card-head) { margin-left: 18px; margin-right: 18px; }
+    .panel > :last-child, .section > :last-child { margin-bottom: 18px; }
+    .table-wrap { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    table { width: 100%; border-collapse: collapse; }
+    th { padding: 10px 16px; border-bottom: 1px solid var(--line); color: var(--muted); font-size: 11px; font-weight: 600; letter-spacing: .1em; text-align: left; white-space: nowrap; }
+    td { padding: 13px 16px; border-bottom: 1px solid var(--row-line); font-size: 14px; vertical-align: middle; }
+    tbody tr:last-child td { border-bottom: 0; }
+    .num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+    #menu-body tr { cursor: pointer; }
+    #menu-body tr:hover td { background: var(--accent-soft); }
+    #menu-body tr.warning td { background: var(--warn-soft); }
+    #menu-body tr.affected td { background: var(--accent-soft); }
+    .menu-name { font-weight: 600; }
+    .rate-layout { min-width: 155px; display: flex; align-items: center; gap: 10px; }
+    .rate-bar { height: 5px; border-radius: 3px; background: var(--row-line); flex-grow: 1; overflow: hidden; }
+    .rate-fill { height: 100%; border-radius: 3px; background: var(--accent); }
+    .warning .rate-fill { background: var(--warn); }
+    .rate { width: 76px; font-size: 18px; font-weight: 600; text-align: right; white-space: nowrap; }
+    .warning .rate { color: var(--warn); }
+    .stamp { color: var(--warn); font-size: 12px; font-weight: 700; white-space: nowrap; }
+    .required-price { display: block; margin-top: 2px; color: var(--muted); font-size: 11px; white-space: nowrap; }
+    .price-rise { color: var(--warn); font-weight: 700; }
+    .history-button { white-space: nowrap; }
+    /* ---- フォーム・原価カード・取り込み ---- */
+    .switch-buttons, .mapping-row { margin-top: 14px; display: flex; flex-wrap: wrap; align-items: end; gap: 8px 14px; }
+    .switch-buttons button.active { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+    .import-input { margin-top: 14px; display: grid; gap: 8px; }
+    .import-input textarea { width: 100%; min-height: 120px; padding: 10px; resize: vertical; border: 1px solid var(--line); border-radius: 8px; background: #ffffff; color: var(--ink); font-size: 14px; }
+    .mapping-row label, .inline-form label { display: grid; gap: 4px; color: var(--muted); font-size: 12px; }
+    .mapping-row select { min-width: 150px; padding: 7px; border: 1px solid var(--line); border-radius: 8px; background: #ffffff; }
+    .import-summary { margin-top: 14px; font-weight: 700; }
+    .panel .table-wrap { margin-top: 10px; }
+    .history-list { margin-top: 12px; }
+    .detail-card { display: none; margin: 14px 18px 18px; }
+    .card-total { text-align: right; font-weight: 700; }
+    .card-body { padding: 0 0 15px; overflow-x: auto; }
+    .card-body table { margin-top: 12px; }
+    .edit-input, .recipe-select { width: 125px; max-width: 100%; padding: 7px; border: 1px solid var(--line); border-radius: 8px; background: #ffffff; color: var(--ink); text-align: right; }
+    .name-input { width: 210px; text-align: left; }
+    .unit-input { width: 72px; text-align: left; }
+    .inline-form { margin: 12px 0; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); display: flex; flex-wrap: wrap; align-items: end; gap: 8px; }
+    .recipe-actions { display: flex; justify-content: flex-end; gap: 6px; }
+    .unit, .master-note { color: var(--muted); font-size: 12px; }
+    .master-note { margin-top: 9px; }
+    @media (max-width: 800px) {
+      .app { flex-direction: column; }
+      .side { width: auto; flex: none; padding: 10px; border-right: 0; border-bottom: 1px solid var(--line); flex-direction: row; flex-wrap: nowrap; overflow-x: auto; }
+      .side .foot, .brand { display: none; }
+      .nav { flex: 0 0 auto; }
+      .nav.off .tag { margin-left: 6px; }
+      .main { padding: 18px; }
+      .head { align-items: flex-start; flex-wrap: wrap; }
+      .action-buttons { width: 100%; margin-left: 0; justify-content: flex-start; }
+      .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    @media (max-width: 480px) {
+      .main { padding: 14px 10px 30px; gap: 14px; }
+      .action-buttons { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .action-button { width: 100%; padding: 0 9px; font-size: 12px; }
+      .tile { padding: 14px 12px; }
+      .tile-value { font-size: 34px; }
+      .panel-head, .section-title, .card-head { align-items: flex-start; flex-direction: column; }
+      .inline-form { align-items: stretch; flex-direction: column; }
+      .inline-form label, .inline-form .edit-input, .inline-form .recipe-select { width: 100%; }
+      table { min-width: 680px; }
+      #ingredient-body { min-width: 760px; }
+      .card-total { text-align: left; }
+    }
+    @media print {
+      @page { size: A4 portrait; margin: 9mm; }
+      body { background: #ffffff; }
+      .side, .action-buttons, .notice, #import-panel, #history-panel, #detail-card, #ingredient-section, #menu-add-form { display: none !important; }
+      .main { padding: 0; gap: 10px; }
+      .head { display: block; }
+      .tiles { gap: 6px; }
+      .tile, .panel, .section { border-color: #000000; break-inside: avoid; }
+      .tile { padding: 8px 10px; }
+      .tile-value { font-size: 26px; }
+      #menu-section { display: block; }
+      #menu-section table { table-layout: fixed; }
+      #menu-section th, #menu-section td { padding: 5px 6px; border-color: #000000; font-size: 9px; }
+      #menu-section .rate-layout { min-width: 0; }
+      #menu-section .rate { width: 54px; font-size: 12px; }
+      #menu-section .required-price { white-space: normal; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="side" aria-label="業務ツール">
+      <div class="brand">業務ツール</div>
+      <nav id="sidebar-nav"></nav>
+      <div class="foot">データはこのパソコンの中にだけ保存されます。<br>ネット通信なし。<br>画面バージョン: 2026-09-06</div>
+    </aside>
+
+    <main class="main">
+      <header class="head">
+        <div class="head-copy">
+          <div class="sub">○○ダイニング（サンプル）・2026年9月5日 更新</div>
+          <h1>原価管理</h1>
+        </div>
+        <div class="action-buttons">
+          <button id="import-open-button" class="action-button" type="button">一括取り込み</button>
+          <button id="import-undo-button" class="action-button" type="button" disabled>取り込みを取り消す</button>
+          <button id="backup-write-button" class="action-button" type="button">バックアップ書き出し</button>
+          <button id="backup-read-button" class="action-button" type="button">バックアップ読み込み</button>
+          <button id="sample-button" class="action-button" type="button">見本データを入れる</button>
+          <button id="reset-button" class="action-button" type="button">白紙に戻す</button>
+          <button id="add-menu-button" class="action-button primary" type="button">メニューを追加</button>
+        </div>
+        <input id="backup-file-input" type="file" accept="application/json,.json" hidden>
+      </header>
+
+      <div class="tiles" aria-label="原価管理の指標">
+        <div class="tile"><div class="tile-key">メニュー数</div><div class="tile-value"><span id="menu-count">0</span><small>品</small></div><div class="tile-note">&nbsp;</div></div>
+        <div class="tile"><div class="tile-key">平均原価率</div><div class="tile-value"><span id="average-rate">0.0</span><small>%</small></div><div id="average-rate-note" class="tile-note"></div></div>
+        <div class="tile warn"><div class="tile-key">要見直し</div><div class="tile-value"><span id="warning-count">0</span><small>品</small></div><div class="tile-note">&nbsp;</div></div>
+        <div class="tile"><div class="tile-key">警告の基準</div><label class="tile-value threshold"><input id="threshold" type="number" min="0.1" max="100" step="0.1" value="30" aria-label="警告の基準"><small>%</small></label><div class="tile-note">変更可</div></div>
+      </div>
+
+      <div id="notice" class="notice" role="status" aria-live="polite"></div>
+
+      <section id="import-panel" class="panel" aria-labelledby="import-title">
+        <div class="panel-head"><h2 id="import-title">一括取り込み</h2><button id="import-close-button" class="action-button" type="button">閉じる</button></div>
+        <div class="switch-buttons"><button id="import-menu-tab" class="action-button active" type="button">メニュー取り込み</button><button id="import-ingredient-tab" class="action-button" type="button">食材取り込み</button></div>
+        <div class="import-input">
+          <label>CSVファイルを選ぶ <input id="import-file-input" type="file" accept=".csv,text/csv"></label>
+          <label>または、Excel・スプレッドシートの表を貼り付ける<textarea id="import-text" placeholder="商品名　売価&#10;若鶏の唐揚げ　680"></textarea></label>
+          <div><button id="import-read-button" class="action-button" type="button">列を確認する</button></div>
+        </div>
+        <div id="mapping-area" class="mapping-row"></div>
+        <div id="import-preview"></div>
+      </section>
+
+      <section id="history-panel" class="panel" aria-labelledby="history-title">
+        <div class="panel-head"><h2 id="history-title">仕入値の履歴</h2><button id="history-close-button" class="action-button" type="button">閉じる</button></div>
+        <div id="history-list" class="history-list"></div>
+      </section>
+
+      <section id="menu-section" class="section" aria-labelledby="menu-title">
+        <div class="section-title"><h2 id="menu-title">メニュー別 原価一覧</h2><span class="tile-note">メニューを選ぶと原価カードを開きます</span></div>
+        <div id="menu-add-form"></div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>メニュー名</th><th class="num">売価（税抜）</th><th class="num">原価</th><th>原価率</th><th class="num">粗利額</th><th>判定</th></tr></thead>
+            <tbody id="menu-body"></tbody>
+          </table>
+        </div>
+        <article id="detail-card" class="detail-card" aria-live="polite"></article>
+      </section>
+
+      <section id="ingredient-section" class="section" aria-labelledby="ingredient-title">
+        <div class="section-title"><h2 id="ingredient-title">食材マスター</h2><button id="add-ingredient-button" class="action-button" type="button">食材を追加</button></div>
+        <div id="ingredient-add-form"></div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>食材名</th><th>単位</th><th class="num">単位あたり仕入値（円）</th><th>更新日</th><th class="num">前回比</th><th>操作</th></tr></thead>
+            <tbody id="ingredient-body"></tbody>
+          </table>
+        </div>
+        <p class="master-note">※ 入力内容はこのブラウザ内に保存されます。金額は税抜の想定です。</p>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    // ---- サイドバー項目一覧（導入済みフラグはここだけ触る） ----
+    const SIDEBAR_TOOLS = [
+      { no: "01", name: "日報分析", file: "./日報分析.html", installed: true },
+      { no: "02", name: "資金繰り表", file: "./資金繰り表.html", installed: true },
+      { no: "03", name: "原価管理", file: "./原価管理.html", installed: true },
+      { no: "04", name: "月次PL", file: "./月次PL.html", installed: true },
+      { no: "05", name: "給与明細作成", file: "./給与明細作成.html", installed: true },
+      { no: "06", name: "支払期日管理", file: "./支払期日管理.html", installed: true },
+      { no: "07", name: "採用管理", file: "./採用管理.html", installed: true },
+      { no: "08", name: "補助金チェッカー", file: "./補助金チェッカー.html", installed: true },
+      { no: "09", name: "備品発注リスト", file: "./備品発注リスト.html", installed: true },
+    ];
+    const CURRENT_TOOL_NO = "03"; // このツール自身（表示用の連番。指針§8）。強調表示に使う
+
+    // ---- サイドバーの描画（DOM組み立てのみ・HTML文字列連結なし） ----
+    (function renderSidebar() {
+      const nav = document.getElementById("sidebar-nav");
+      for (const tool of SIDEBAR_TOOLS) {
+        const no = document.createElement("span");
+        no.className = "no";
+        no.textContent = tool.no;
+        if (tool.installed) {
+          const link = document.createElement("a");
+          link.className = tool.no === CURRENT_TOOL_NO ? "nav on" : "nav";
+          link.href = tool.file;
+          if (tool.no === CURRENT_TOOL_NO) link.setAttribute("aria-current", "page");
+          link.append(no, document.createTextNode(tool.name));
+          nav.appendChild(link);
+        } else {
+          const item = document.createElement("span");
+          item.className = "nav off";
+          const tag = document.createElement("span");
+          tag.className = "tag";
+          tag.textContent = "未導入";
+          item.append(no, document.createTextNode(tool.name), tag);
+          nav.appendChild(item);
+        }
+      }
+    })();
+
+    // ---- 差し替え用ダミーデータ ----
+    // 実データはここを差し替える（食材マスター・メニュー定義）。
+    // 将来、ロス率・歩留まり等を追加する場合もこのデータ構造を拡張する。
+    const INGREDIENTS = [
+      { id: "chicken", name: "鶏もも肉", unit: "g", unitPrice: 0.85 },
+      { id: "flour", name: "薄力粉", unit: "g", unitPrice: 0.22 },
+      { id: "starch", name: "片栗粉", unit: "g", unitPrice: 0.25 },
+      { id: "oil", name: "揚げ油", unit: "ml", unitPrice: 0.30 },
+      { id: "seasoning", name: "合わせ調味料", unit: "ml", unitPrice: 0.75 },
+      { id: "potato", name: "フライドポテト", unit: "g", unitPrice: 0.70 },
+      { id: "tuna", name: "まぐろ", unit: "g", unitPrice: 2.60 },
+      { id: "salmon", name: "サーモン", unit: "g", unitPrice: 2.20 },
+      { id: "whitefish", name: "白身魚", unit: "g", unitPrice: 1.90 },
+      { id: "garnish", name: "刺身つま・大葉", unit: "式", unitPrice: 18.00 },
+      { id: "leek", name: "長ねぎ", unit: "g", unitPrice: 0.45 },
+      { id: "whisky", name: "ウイスキー", unit: "ml", unitPrice: 3.60 },
+      { id: "soda", name: "炭酸水", unit: "ml", unitPrice: 0.30 },
+      { id: "beer", name: "樽生ビール", unit: "ml", unitPrice: 0.55 },
+      { id: "edamame", name: "枝豆", unit: "g", unitPrice: 0.65 },
+      { id: "egg", name: "鶏卵", unit: "個", unitPrice: 35.00 },
+      { id: "dashi", name: "だし", unit: "ml", unitPrice: 0.22 },
+      { id: "rice", name: "ご飯", unit: "g", unitPrice: 0.38 },
+      { id: "leaf", name: "葉物野菜", unit: "g", unitPrice: 1.20 },
+      { id: "tomato", name: "トマト", unit: "g", unitPrice: 0.70 },
+      { id: "dressing", name: "ドレッシング", unit: "ml", unitPrice: 0.80 }
+    ];
+
+    const MENUS = [
+      { id: "karaage", name: "若鶏の唐揚げ", price: 680, recipe: [{ ingredientId: "chicken", amount: 220 }, { ingredientId: "flour", amount: 20 }, { ingredientId: "starch", amount: 15 }, { ingredientId: "oil", amount: 25 }, { ingredientId: "seasoning", amount: 12 }] },
+      { id: "fries", name: "ポテトフライ", price: 480, recipe: [{ ingredientId: "potato", amount: 180 }, { ingredientId: "oil", amount: 25 }, { ingredientId: "seasoning", amount: 3 }] },
+      { id: "sashimi", name: "刺身三点盛り", price: 1280, recipe: [{ ingredientId: "tuna", amount: 70 }, { ingredientId: "salmon", amount: 70 }, { ingredientId: "whitefish", amount: 60 }, { ingredientId: "garnish", amount: 1 }] },
+      { id: "yakitori", name: "ねぎま串（2本）", price: 620, recipe: [{ ingredientId: "chicken", amount: 160 }, { ingredientId: "leek", amount: 50 }, { ingredientId: "seasoning", amount: 15 }] },
+      { id: "highball", name: "角ハイボール", price: 550, recipe: [{ ingredientId: "whisky", amount: 30 }, { ingredientId: "soda", amount: 180 }] },
+      { id: "draftbeer", name: "生ビール（中）", price: 600, recipe: [{ ingredientId: "beer", amount: 400 }] },
+      { id: "edamame", name: "塩ゆで枝豆", price: 380, recipe: [{ ingredientId: "edamame", amount: 150 }, { ingredientId: "seasoning", amount: 2 }] },
+      { id: "dashimaki", name: "だし巻き玉子", price: 520, recipe: [{ ingredientId: "egg", amount: 3 }, { ingredientId: "dashi", amount: 80 }, { ingredientId: "seasoning", amount: 6 }] },
+      { id: "zosui", name: "鶏だし雑炊", price: 580, recipe: [{ ingredientId: "rice", amount: 150 }, { ingredientId: "egg", amount: 1 }, { ingredientId: "chicken", amount: 50 }, { ingredientId: "dashi", amount: 250 }, { ingredientId: "leek", amount: 15 }] },
+      { id: "salad", name: "彩り和風サラダ", price: 580, recipe: [{ ingredientId: "leaf", amount: 100 }, { ingredientId: "tomato", amount: 80 }, { ingredientId: "dressing", amount: 30 }] }
+    ];
+    // ---- 画面状態と表示形式 ----
+    const STORAGE_KEY = "freesia-cost-demo-all-data-v3";
+    const V2_STORAGE_KEY = "freesia-cost-demo-all-data-v2";
+    const LEGACY_STORAGE_KEY = "freesia-cost-demo-ingredient-prices-v1";
+    const DEFAULT_WARNING_THRESHOLD = 30; // 顧客の原価率上限30%を初期判定基準にする。
+    const INITIAL_HISTORY_DATE = "2026-09-04";
+    const NOTICE_DISPLAY_MS = 8000; // 操作結果を読み切れるよう8秒間表示する。
+    const MAX_NAME_LENGTH = 50; // 帳票内での表示崩れと過大な保存データを防ぐ上限。
+    const MAX_UNIT_LENGTH = 20; // 「単位」は短い表記を想定するが、自由入力の余地を残す。
+    let ingredients = [];
+    let menus = [];
+    let selectedMenuId = null;
+    let noticeTimer = null;
+    let importKind = "menu";
+    let importedRows = [];
+    let importUndoSnapshot = null;
+
+    const clone = value => JSON.parse(JSON.stringify(value));
+    const formatYen = value => `${Math.round(value).toLocaleString("ja-JP")}円`;
+    const formatRequiredPrice = value => `¥${Math.round(value).toLocaleString("ja-JP")}〜`;
+    const formatPercent = value => `${value.toFixed(1)}%`;
+    const makeId = prefix => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+    const todayText = () => {
+      const date = new Date();
+      return [date.getFullYear(), String(date.getMonth() + 1).padStart(2, "0"), String(date.getDate()).padStart(2, "0")].join("-");
+    };
+
+    // ---- データ検証とブラウザ内への保存 ----
+    function isValidText(value, maxLength) {
+      return typeof value === "string" && value.trim().length > 0 && value.length <= maxLength;
+    }
+
+    function isNonNegativeNumber(value) {
+      return typeof value === "number" && Number.isFinite(value) && value >= 0;
+    }
+
+    function isValidHistory(history) {
+      return Array.isArray(history) && history.length > 0 && history.every(entry => entry && isNonNegativeNumber(entry.unitPrice) && typeof entry.updatedAt === "string" && /^\d{4}-\d{2}-\d{2}$/.test(entry.updatedAt));
+    }
+
+    function validateDefinitions(candidateIngredients, candidateMenus, requireHistory = false) {
+      if (!Array.isArray(candidateIngredients) || !Array.isArray(candidateMenus)) return null;
+      const ingredientIds = new Set();
+      for (const item of candidateIngredients) {
+        if (!item || !isValidText(item.id, 100) || ingredientIds.has(item.id) || !isValidText(item.name, MAX_NAME_LENGTH) || !isValidText(item.unit, MAX_UNIT_LENGTH) || !isNonNegativeNumber(item.unitPrice)) return null;
+        if (requireHistory && (!isValidHistory(item.priceHistory) || item.priceHistory[item.priceHistory.length - 1].unitPrice !== item.unitPrice)) return null;
+        ingredientIds.add(item.id);
+      }
+      const menuIds = new Set();
+      for (const menu of candidateMenus) {
+        if (!menu || !isValidText(menu.id, 100) || menuIds.has(menu.id) || !isValidText(menu.name, MAX_NAME_LENGTH) || !isNonNegativeNumber(menu.price) || !Array.isArray(menu.recipe)) return null;
+        menuIds.add(menu.id);
+        if (menu.recipe.some(line => !line || !ingredientIds.has(line.ingredientId) || !isNonNegativeNumber(line.amount))) return null;
+      }
+      const validatedIngredients = clone(candidateIngredients);
+      for (const item of validatedIngredients) {
+        if (!isValidHistory(item.priceHistory)) item.priceHistory = [{ unitPrice: item.unitPrice, updatedAt: INITIAL_HISTORY_DATE }];
+      }
+      return { ingredients: validatedIngredients, menus: clone(candidateMenus) };
+    }
+
+    function defaultData() { return validateDefinitions(INGREDIENTS, MENUS); }
+
+    // 初回起動は空で始める（見本は「見本データを入れる」ボタンで任意投入。2026-09-06ゆう指示）
+    function emptyData() { return { ingredients: [], menus: [] }; }
+
+    // 壊れた保存データからの復帰先は白紙＋日本語案内（合格線11。見本データは入れない）
+    let brokenSaveNotice = null;
+    function loadData() {
+      let hadSavedText = false;
+      try {
+        const savedText = localStorage.getItem(STORAGE_KEY) || localStorage.getItem(V2_STORAGE_KEY);
+        if (savedText) {
+          hadSavedText = true;
+          const saved = JSON.parse(savedText);
+          const valid = validateDefinitions(saved.ingredients, saved.menus, saved.version === 3);
+          if (valid) return valid;
+        }
+        const legacy = JSON.parse(localStorage.getItem(LEGACY_STORAGE_KEY) || "null");
+        if (legacy && typeof legacy === "object" && !Array.isArray(legacy)) {
+          const initial = defaultData();
+          for (const item of initial.ingredients) {
+            if (isNonNegativeNumber(legacy[item.id])) item.unitPrice = legacy[item.id];
+          }
+          return initial;
+        }
+      } catch (_) { /* 壊れた保存値はこの下で白紙扱いにする */ }
+      if (hadSavedText) brokenSaveNotice = "保存されていたデータが壊れていたため、白紙で起動しました。バックアップファイルがあれば「バックアップ読み込み」で復元できます";
+      return emptyData();
+    }
+
+    function getBackupJson() {
+      return JSON.stringify({ version: 3, ingredients: clone(ingredients), menus: clone(menus) }, null, 2);
+    }
+
+    function saveData() {
+      try { localStorage.setItem(STORAGE_KEY, getBackupJson()); } catch (_) { /* 保存不可でも画面操作は継続 */ }
+    }
+
+    function appendPriceHistory(ingredient, nextPrice, updatedAt = todayText()) {
+      if (!Array.isArray(ingredient.priceHistory)) ingredient.priceHistory = [{ unitPrice: ingredient.unitPrice, updatedAt: INITIAL_HISTORY_DATE }];
+      const latest = ingredient.priceHistory[ingredient.priceHistory.length - 1];
+      if (!latest || latest.unitPrice !== nextPrice) ingredient.priceHistory.push({ unitPrice: nextPrice, updatedAt });
+      ingredient.unitPrice = nextPrice;
+    }
+
+    function findIngredientById(id) { return ingredients.find(item => item.id === id); }
+    function findMenuById(id) { return menus.find(item => item.id === id); }
+
+    // ---- 原価の計算 ----
+    function calculateMenuCost(menu) {
+      return menu.recipe.reduce((sum, line) => sum + findIngredientById(line.ingredientId).unitPrice * line.amount, 0);
+    }
+
+    function calculateMenuMetrics(menu) {
+      const cost = calculateMenuCost(menu);
+      const isPriceUnset = menu.price === 0;
+      return { cost, rate: isPriceUnset ? null : cost / menu.price * 100, profit: isPriceUnset ? null : menu.price - cost, isPriceUnset };
+    }
+
+    function isMenuWarning(metrics, threshold) {
+      return (metrics.isPriceUnset && metrics.cost > 0) || (!metrics.isPriceUnset && metrics.rate > threshold);
+    }
+
+    function currentThreshold() {
+      const value = Number(document.getElementById("threshold").value);
+      return Number.isFinite(value) && value > 0 ? value : DEFAULT_WARNING_THRESHOLD;
+    }
+
+    // データ由来の文字列をHTMLとして解釈させないため、表示要素はtextContentで組み立てる。
+    function createCell(text, className = "") {
+      const cell = document.createElement("td");
+      if (className) cell.className = className;
+      cell.textContent = text;
+      return cell;
+    }
+
+    function createInput(type, value, className, label) {
+      const input = document.createElement("input");
+      input.type = type;
+      input.value = value;
+      input.className = className;
+      input.setAttribute("aria-label", label);
+      if (type === "number") { input.min = "0"; input.step = "any"; }
+      return input;
+    }
+
+    function createButton(label, handler, extraClass = "") {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = `action-button small-button ${extraClass}`.trim();
+      button.textContent = label;
+      button.addEventListener("click", handler);
+      return button;
+    }
+
+    function readText(input, label, maxLength) {
+      const value = input.value.trim();
+      if (!value) { showNotice(`${label}を入力してください`); return null; }
+      if (input.value.length > maxLength) { showNotice(`${label}は${maxLength}文字以内で入力してください`); return null; }
+      return value;
+    }
+
+    function readNumber(input, label) {
+      const value = Number(input.value);
+      if (input.value === "" || !Number.isFinite(value) || value < 0) { showNotice(`${label}は0以上の数値で入力してください`); return null; }
+      return value;
+    }
+
+    // ---- メニュー一覧と追加 ----
+    function renderMenus(affectedIngredientId = null, refreshDetails = true) {
+      const tbody = document.getElementById("menu-body");
+      const threshold = currentThreshold();
+      let warnings = 0;
+      let pricedRateTotal = 0;
+      let pricedMenuCount = 0;
+      if (!menus.length) {
+        const tr = document.createElement("tr");
+        const td = document.createElement("td");
+        td.colSpan = 6;
+        td.className = "empty-hint";
+        td.textContent = "まだメニューがありません。「見本データを入れる」で試すか、「一括取り込み」か「メニューを追加」から始めてください。";
+        tr.appendChild(td);
+        tbody.replaceChildren(tr);
+      } else
+      tbody.replaceChildren(...menus.map(menu => {
+        const metrics = calculateMenuMetrics(menu);
+        const isWarning = isMenuWarning(metrics, threshold);
+        if (isWarning) warnings++;
+        if (!metrics.isPriceUnset) { pricedRateTotal += metrics.rate; pricedMenuCount++; }
+        const tr = document.createElement("tr");
+        tr.dataset.menuId = menu.id;
+        tr.tabIndex = 0;
+        if (isWarning) tr.classList.add("warning");
+        if (affectedIngredientId && menu.recipe.some(line => line.ingredientId === affectedIngredientId)) tr.classList.add("affected");
+        const statusCell = createCell(isWarning ? "" : "適正", isWarning ? "" : "ok");
+        if (isWarning) {
+          const stamp = document.createElement("span");
+          stamp.className = "stamp";
+          stamp.textContent = "要見直し";
+          const requiredPrice = document.createElement("span");
+          requiredPrice.className = "required-price";
+          requiredPrice.textContent = `${threshold}%に収めるなら ${formatRequiredPrice(Math.ceil(metrics.cost / (threshold / 100)))}`;
+          statusCell.append(stamp, requiredPrice);
+        }
+        const rateText = metrics.isPriceUnset ? (metrics.cost > 0 ? "—（売価未設定）" : "—") : formatPercent(metrics.rate);
+        const profitText = metrics.isPriceUnset ? "—" : formatYen(metrics.profit);
+        const nameCell = createCell(menu.name, "menu-name");
+        const rateCell = createCell("");
+        const rateLayout = document.createElement("div");
+        rateLayout.className = "rate-layout";
+        const rateBar = document.createElement("div");
+        rateBar.className = "rate-bar";
+        const rateFill = document.createElement("div");
+        rateFill.className = "rate-fill";
+        rateFill.style.width = `${metrics.isPriceUnset ? 0 : Math.min(100, metrics.rate)}%`;
+        rateBar.append(rateFill);
+        const rateValue = document.createElement("span");
+        rateValue.className = "rate num";
+        rateValue.textContent = rateText;
+        rateLayout.append(rateBar, rateValue);
+        rateCell.append(rateLayout);
+        tr.append(nameCell, createCell(formatYen(menu.price), "num"), createCell(formatYen(metrics.cost), "num"), rateCell, createCell(profitText, "num"), statusCell);
+        tr.addEventListener("click", () => showDetails(menu.id));
+        tr.addEventListener("keydown", event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); showDetails(menu.id); } });
+        return tr;
+      }));
+      document.getElementById("menu-count").textContent = menus.length;
+      document.getElementById("warning-count").textContent = warnings;
+      document.getElementById("average-rate").textContent = pricedMenuCount ? (pricedRateTotal / pricedMenuCount).toFixed(1) : "—";
+      const excludedCount = menus.length - pricedMenuCount;
+      document.getElementById("average-rate-note").textContent = excludedCount ? `売価未設定${excludedCount}品を除く` : "";
+      if (refreshDetails && selectedMenuId && findMenuById(selectedMenuId)) showDetails(selectedMenuId);
+    }
+
+    function showMenuAddForm() {
+      const host = document.getElementById("menu-add-form");
+      const nameInput = createInput("text", "", "edit-input name-input", "新しいメニュー名");
+      nameInput.maxLength = MAX_NAME_LENGTH;
+      const priceInput = createInput("number", "", "edit-input", "新しいメニューの売価");
+      const form = document.createElement("div");
+      form.className = "inline-form";
+      form.append(makeLabel("メニュー名", nameInput), makeLabel("売価（円）", priceInput), createButton("追加する", () => {
+        const name = readText(nameInput, "メニュー名", MAX_NAME_LENGTH);
+        const price = readNumber(priceInput, "売価");
+        if (name === null || price === null) return;
+        const menu = { id: makeId("menu"), name, price, recipe: [] };
+        menus.push(menu);
+        saveData();
+        host.replaceChildren();
+        selectedMenuId = menu.id;
+        renderMenus();
+        showNotice(`${name}を追加しました`);
+      }), createButton("閉じる", () => host.replaceChildren()));
+      host.replaceChildren(form);
+      nameInput.focus();
+    }
+
+    function makeLabel(text, control) {
+      const label = document.createElement("label");
+      const caption = document.createElement("span");
+      caption.textContent = text;
+      label.append(caption, control);
+      return label;
+    }
+
+    // ---- 原価カードとレシピ編集 ----
+    function showDetails(menuId) {
+      const menu = findMenuById(menuId);
+      if (!menu) return;
+      selectedMenuId = menuId;
+      const metrics = calculateMenuMetrics(menu);
+      const card = document.getElementById("detail-card");
+      const cardHead = document.createElement("div");
+      cardHead.className = "card-head";
+      const title = document.createElement("h2");
+      title.textContent = `${menu.name} 原価カード`;
+      const cardTotal = document.createElement("div");
+      cardTotal.className = "card-total";
+      const rateText = metrics.isPriceUnset ? (metrics.cost > 0 ? "—（売価未設定）" : "—") : formatPercent(metrics.rate);
+      const profitText = metrics.isPriceUnset ? "—" : formatYen(metrics.profit);
+      cardTotal.textContent = `原価 ${formatYen(metrics.cost)} ／ 原価率 ${rateText} ／ 粗利 ${profitText}`;
+      if (isMenuWarning(metrics, currentThreshold())) cardTotal.append(document.createElement("br"), document.createTextNode(`${currentThreshold()}%に収めるなら ${formatRequiredPrice(Math.ceil(metrics.cost / (currentThreshold() / 100)))}`));
+      cardHead.append(title, cardTotal);
+      const cardBody = document.createElement("div");
+      cardBody.className = "card-body";
+      cardBody.append(createMenuEditForm(menu), createRecipeTable(menu), createRecipeAddForm(menu));
+      card.replaceChildren(cardHead, cardBody);
+      card.classList.add("visible");
+    }
+
+    function createMenuEditForm(menu) {
+      const nameInput = createInput("text", menu.name, "edit-input name-input", "メニュー名");
+      nameInput.maxLength = MAX_NAME_LENGTH;
+      const priceInput = createInput("number", menu.price, "edit-input", "売価");
+      const form = document.createElement("div");
+      form.className = "inline-form";
+      const save = () => {
+        const name = readText(nameInput, "メニュー名", MAX_NAME_LENGTH);
+        const price = readNumber(priceInput, "売価");
+        if (name === null || price === null) return;
+        menu.name = name;
+        menu.price = price;
+        saveData();
+        renderMenus(null, false);
+        refreshDetailSummary(menu);
+      };
+      nameInput.addEventListener("input", () => { if (nameInput.value.trim()) save(); });
+      nameInput.addEventListener("change", () => { if (!nameInput.value.trim()) { nameInput.value = menu.name; showNotice("メニュー名を入力してください"); } });
+      priceInput.addEventListener("input", () => { if (priceInput.value !== "") save(); });
+      priceInput.addEventListener("change", () => { if (priceInput.value === "") { priceInput.value = menu.price; showNotice("売価は0以上の数値で入力してください"); } });
+      form.append(makeLabel("メニュー名", nameInput), makeLabel("売価（円）", priceInput), createButton("メニューを削除", () => deleteMenu(menu), "danger-button"));
+      return form;
+    }
+
+    function refreshDetailSummary(menu) {
+      const card = document.getElementById("detail-card");
+      const metrics = calculateMenuMetrics(menu);
+      const title = card.querySelector("h2");
+      const total = card.querySelector(".card-total");
+      if (title) title.textContent = `${menu.name} 原価カード`;
+      const rateText = metrics.isPriceUnset ? (metrics.cost > 0 ? "—（売価未設定）" : "—") : formatPercent(metrics.rate);
+      const profitText = metrics.isPriceUnset ? "—" : formatYen(metrics.profit);
+      if (total) total.textContent = `原価 ${formatYen(metrics.cost)} ／ 原価率 ${rateText} ／ 粗利 ${profitText}`;
+      if (total && isMenuWarning(metrics, currentThreshold())) total.append(document.createElement("br"), document.createTextNode(`${currentThreshold()}%に収めるなら ${formatRequiredPrice(Math.ceil(metrics.cost / (currentThreshold() / 100)))}`));
+    }
+
+    function createRecipeTable(menu) {
+      const table = document.createElement("table");
+      const thead = document.createElement("thead");
+      const headerRow = document.createElement("tr");
+      for (const label of ["食材", "使用量", "仕入単価", "小計", "操作"]) {
+        const th = document.createElement("th");
+        th.textContent = label;
+        headerRow.append(th);
+      }
+      thead.append(headerRow);
+      const tbody = document.createElement("tbody");
+      tbody.append(...menu.recipe.map((line, index) => {
+        const ingredient = findIngredientById(line.ingredientId);
+        const tr = document.createElement("tr");
+        const amountCell = createCell("", "num");
+        const amountInput = createInput("number", line.amount, "edit-input", `${ingredient.name}の使用量`);
+        const subtotalCell = createCell(formatYen(ingredient.unitPrice * line.amount), "num");
+        amountInput.addEventListener("input", () => {
+          if (amountInput.value === "") return;
+          const amount = readNumber(amountInput, "使用量");
+          if (amount === null) return;
+          line.amount = amount;
+          saveData();
+          subtotalCell.textContent = formatYen(ingredient.unitPrice * line.amount);
+          renderMenus(null, false);
+          refreshDetailSummary(menu);
+        });
+        amountInput.addEventListener("change", () => { if (amountInput.value === "") { amountInput.value = line.amount; showNotice("使用量は0以上の数値で入力してください"); } });
+        amountCell.append(amountInput, document.createTextNode(` ${ingredient.unit}`));
+        const actionCell = createCell("", "recipe-actions");
+        actionCell.append(createButton("行を削除", () => {
+          menu.recipe.splice(index, 1);
+          saveData();
+          renderMenus();
+          showNotice(`${ingredient.name}をレシピから外しました`);
+        }, "danger-button"));
+        tr.append(createCell(ingredient.name), amountCell, createCell(`${ingredient.unitPrice.toLocaleString("ja-JP")}円 / ${ingredient.unit}`, "num"), subtotalCell, actionCell);
+        return tr;
+      }));
+      table.append(thead, tbody);
+      return table;
+    }
+
+    function createRecipeAddForm(menu) {
+      const form = document.createElement("div");
+      form.className = "inline-form";
+      const select = document.createElement("select");
+      select.className = "recipe-select";
+      select.setAttribute("aria-label", "追加する食材");
+      for (const ingredient of ingredients) {
+        const option = document.createElement("option");
+        option.value = ingredient.id;
+        option.textContent = `${ingredient.name}（${ingredient.unit}）`;
+        select.append(option);
+      }
+      const amountInput = createInput("number", "", "edit-input", "使用量");
+      const button = createButton("レシピに追加", () => {
+        if (!ingredients.length) { showNotice("先に食材を追加してください"); return; }
+        const amount = readNumber(amountInput, "使用量");
+        if (amount === null) return;
+        const existing = menu.recipe.find(line => line.ingredientId === select.value);
+        if (existing) existing.amount += amount;
+        else menu.recipe.push({ ingredientId: select.value, amount });
+        saveData();
+        renderMenus();
+        showNotice("レシピに食材を追加しました");
+      });
+      button.disabled = ingredients.length === 0;
+      form.append(makeLabel("食材", select), makeLabel("使用量", amountInput), button);
+      return form;
+    }
+
+    function deleteMenu(menu) {
+      if (!confirm(`${menu.name}を削除しますか？`)) return;
+      menus = menus.filter(item => item.id !== menu.id);
+      selectedMenuId = null;
+      saveData();
+      document.getElementById("detail-card").classList.remove("visible");
+      renderMenus();
+      showNotice(`${menu.name}を削除しました`);
+    }
+
+    // ---- 食材マスターの表示・追加・編集・削除 ----
+    function renderIngredients() {
+      const tbody = document.getElementById("ingredient-body");
+      tbody.replaceChildren(...ingredients.map(item => {
+        const tr = document.createElement("tr");
+        const nameCell = createCell("");
+        const unitCell = createCell("");
+        const priceCell = createCell("", "num");
+        const updatedCell = createCell("");
+        const changeCell = createCell("", "num");
+        const actionCell = createCell("");
+        const nameInput = createInput("text", item.name, "edit-input name-input", `${item.name}の食材名`);
+        const unitInput = createInput("text", item.unit, "edit-input unit-input", `${item.name}の単位`);
+        const priceInput = createInput("number", item.unitPrice, "edit-input", `${item.name}の仕入値`);
+        nameInput.maxLength = MAX_NAME_LENGTH;
+        unitInput.maxLength = MAX_UNIT_LENGTH;
+        nameInput.addEventListener("change", () => updateIngredientText(item, nameInput, "name", "食材名", MAX_NAME_LENGTH));
+        unitInput.addEventListener("change", () => updateIngredientText(item, unitInput, "unit", "単位", MAX_UNIT_LENGTH));
+        priceInput.addEventListener("change", () => updateIngredientPrice(item, priceInput));
+        nameCell.append(nameInput);
+        unitCell.append(unitInput);
+        priceCell.append(priceInput, document.createTextNode(" 円"));
+        const history = item.priceHistory;
+        const latest = history[history.length - 1];
+        const previous = history.length > 1 ? history[history.length - 2] : null;
+        updatedCell.textContent = latest.updatedAt;
+        if (previous && previous.unitPrice !== 0) {
+          const change = (latest.unitPrice - previous.unitPrice) / previous.unitPrice * 100;
+          changeCell.textContent = `${change >= 0 ? "+" : ""}${change.toFixed(1)}%`;
+          if (change > 0) changeCell.classList.add("price-rise");
+        } else changeCell.textContent = "—";
+        actionCell.append(createButton("履歴", () => showIngredientHistory(item), "history-button"), document.createTextNode(" "), createButton("削除", () => deleteIngredient(item), "danger-button"));
+        tr.append(nameCell, unitCell, priceCell, updatedCell, changeCell, actionCell);
+        return tr;
+      }));
+    }
+
+    function showIngredientAddForm() {
+      const host = document.getElementById("ingredient-add-form");
+      const nameInput = createInput("text", "", "edit-input name-input", "新しい食材名");
+      const unitInput = createInput("text", "", "edit-input unit-input", "新しい食材の単位");
+      const priceInput = createInput("number", "", "edit-input", "新しい食材の仕入値");
+      nameInput.maxLength = MAX_NAME_LENGTH;
+      unitInput.maxLength = MAX_UNIT_LENGTH;
+      const form = document.createElement("div");
+      form.className = "inline-form";
+      form.append(makeLabel("食材名", nameInput), makeLabel("単位", unitInput), makeLabel("仕入値（円）", priceInput), createButton("追加する", () => {
+        const name = readText(nameInput, "食材名", MAX_NAME_LENGTH);
+        const unit = readText(unitInput, "単位", MAX_UNIT_LENGTH);
+        const unitPrice = readNumber(priceInput, "仕入値");
+        if (name === null || unit === null || unitPrice === null) return;
+        ingredients.push({ id: makeId("ingredient"), name, unit, unitPrice, priceHistory: [{ unitPrice, updatedAt: todayText() }] });
+        saveData();
+        host.replaceChildren();
+        renderIngredients();
+        if (selectedMenuId) showDetails(selectedMenuId);
+        showNotice(`${name}を追加しました`);
+      }), createButton("閉じる", () => host.replaceChildren()));
+      host.replaceChildren(form);
+      nameInput.focus();
+    }
+
+    function updateIngredientText(ingredient, input, property, label, maxLength) {
+      const value = readText(input, label, maxLength);
+      if (value === null) { input.value = ingredient[property]; return; }
+      ingredient[property] = value;
+      saveData();
+      renderIngredients();
+      renderMenus(ingredient.id);
+    }
+
+    function updateIngredientPrice(ingredient, input) {
+      const nextPrice = readNumber(input, "仕入値");
+      if (nextPrice === null) return;
+      const threshold = currentThreshold();
+      const warningsBeforeChange = new Map(menus.map(menu => [menu.id, isMenuWarning(calculateMenuMetrics(menu), threshold)]));
+      appendPriceHistory(ingredient, nextPrice);
+      saveData();
+      renderIngredients();
+      renderMenus(ingredient.id);
+      const newlyExceededMenus = menus.filter(menu => !warningsBeforeChange.get(menu.id) && isMenuWarning(calculateMenuMetrics(menu), threshold));
+      if (newlyExceededMenus.length) {
+        const messages = newlyExceededMenus.map(menu => {
+          const metrics = calculateMenuMetrics(menu);
+          return metrics.isPriceUnset ? `${menu.name}は売価未設定のまま原価が発生しました` : `${menu.name}が原価率${Math.round(metrics.rate)}%になりました`;
+        });
+        showNotice(`⚠ ${ingredient.name}の値上げで${messages.join("、")}`);
+      }
+    }
+
+    function showIngredientHistory(ingredient) {
+      const title = document.getElementById("history-title");
+      title.textContent = `${ingredient.name} の仕入値履歴`;
+      const table = document.createElement("table");
+      const thead = document.createElement("thead");
+      const header = document.createElement("tr");
+      for (const label of ["更新日", "仕入値"]) { const th = document.createElement("th"); th.textContent = label; header.append(th); }
+      thead.append(header);
+      const tbody = document.createElement("tbody");
+      for (const entry of ingredient.priceHistory.slice().reverse()) {
+        const row = document.createElement("tr");
+        row.append(createCell(entry.updatedAt), createCell(`${entry.unitPrice}円 / ${ingredient.unit}`, "num"));
+        tbody.append(row);
+      }
+      table.append(thead, tbody);
+      const wrap = document.createElement("div");
+      wrap.className = "table-wrap";
+      wrap.append(table);
+      document.getElementById("history-list").replaceChildren(wrap);
+      document.getElementById("history-panel").classList.add("visible");
+      document.getElementById("history-panel").scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+
+    function deleteIngredient(ingredient) {
+      const usedMenus = menus.filter(menu => menu.recipe.some(line => line.ingredientId === ingredient.id));
+      const usageText = usedMenus.length ? `${usedMenus.map(menu => menu.name).join("と")}のレシピで使われています。削除するとレシピからも外れます。` : "";
+      if (!confirm(`${usageText}${ingredient.name}を削除しますか？`)) return;
+      ingredients = ingredients.filter(item => item.id !== ingredient.id);
+      for (const menu of menus) menu.recipe = menu.recipe.filter(line => line.ingredientId !== ingredient.id);
+      saveData();
+      renderIngredients();
+      renderMenus();
+      showNotice(`${ingredient.name}を削除しました`);
+    }
+
+    // ---- CSV・表貼り付けの一括取り込み ----
+    function parseDelimitedText(text) {
+      const normalized = text.replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n").trim();
+      if (!normalized) return [];
+      const delimiter = normalized.split("\n").some(line => line.includes("\t")) ? "\t" : ",";
+      const rows = [];
+      let row = [], field = "", quoted = false;
+      for (let index = 0; index < normalized.length; index++) {
+        const character = normalized[index];
+        if (character === '"') {
+          if (quoted && normalized[index + 1] === '"') { field += '"'; index++; }
+          else quoted = !quoted;
+        } else if (character === delimiter && !quoted) { row.push(field); field = ""; }
+        else if (character === "\n" && !quoted) { row.push(field); rows.push(row); row = []; field = ""; }
+        else field += character;
+      }
+      row.push(field);
+      rows.push(row);
+      return rows.filter(cells => cells.some(cell => cell.trim() !== ""));
+    }
+
+    function parseMoney(value) {
+      if (typeof value !== "string") return null;
+      const cleaned = value.trim().replace(/[,，\s]/g, "").replace(/^[¥￥]/, "").replace(/円$/, "");
+      if (!/^\d+(?:\.\d+)?$/.test(cleaned)) return null;
+      const number = Number(cleaned);
+      return Number.isFinite(number) && number >= 0 ? number : null;
+    }
+
+    function importFields() {
+      return importKind === "menu"
+        ? [{ key: "name", label: "商品名", aliases: ["商品名", "メニュー名", "品名", "名前"] }, { key: "price", label: "売価", aliases: ["売価", "価格", "値段", "金額"] }]
+        : [{ key: "name", label: "食材名", aliases: ["食材名", "原材料名", "品名", "名前"] }, { key: "unit", label: "単位", aliases: ["単位", "入数"] }, { key: "unitPrice", label: "仕入値", aliases: ["仕入値", "仕入価格", "単価", "価格"] }];
+    }
+
+    function normalizeHeader(value) { return String(value || "").trim().replace(/[\s_・（）()]/g, "").toLowerCase(); }
+
+    function showImportMapping() {
+      importedRows = parseDelimitedText(document.getElementById("import-text").value);
+      if (!importedRows.length) { showNotice("取り込む表が空です"); return; }
+      const width = Math.max(...importedRows.map(row => row.length));
+      const firstRow = importedRows[0];
+      const fields = importFields();
+      const host = document.getElementById("mapping-area");
+      const controls = [];
+      for (const field of fields) {
+        const select = document.createElement("select");
+        select.dataset.field = field.key;
+        select.setAttribute("aria-label", `${field.label}に対応する列`);
+        const unused = document.createElement("option"); unused.value = ""; unused.textContent = "列を選ぶ"; select.append(unused);
+        for (let index = 0; index < width; index++) {
+          const option = document.createElement("option"); option.value = String(index); option.textContent = `${index + 1}列目（${String(firstRow[index] || "").slice(0, 24)}）`; select.append(option);
+          const header = normalizeHeader(firstRow[index]);
+          if (field.aliases.some(alias => header.includes(normalizeHeader(alias)))) select.value = String(index);
+        }
+        select.addEventListener("change", renderImportPreview);
+        controls.push(makeLabel(field.label, select));
+      }
+      const previewButton = createButton("プレビュー", renderImportPreview);
+      host.replaceChildren(...controls, previewButton);
+      document.getElementById("import-preview").replaceChildren();
+    }
+
+    function selectedImportColumns() {
+      const result = {};
+      for (const select of document.querySelectorAll("#mapping-area select")) result[select.dataset.field] = select.value === "" ? null : Number(select.value);
+      return result;
+    }
+
+    function buildImportPlan() {
+      const columns = selectedImportColumns();
+      const required = importKind === "menu" ? ["name", "price"] : ["name", "unit", "unitPrice"];
+      if (required.some(key => columns[key] === null || columns[key] === undefined) || new Set(required.map(key => columns[key])).size !== required.length) return { error: "それぞれ異なる列を全て選んでください" };
+      const fields = importFields();
+      const firstLooksLikeHeader = fields.some(field => field.aliases.some(alias => normalizeHeader(importedRows[0][columns[field.key]]).includes(normalizeHeader(alias))));
+      const sourceRows = firstLooksLikeHeader ? importedRows.slice(1) : importedRows;
+      const validByName = new Map();
+      let skipped = 0;
+      for (const row of sourceRows) {
+        const name = String(row[columns.name] || "").trim();
+        const price = parseMoney(row[columns[importKind === "menu" ? "price" : "unitPrice"]]);
+        const unit = importKind === "ingredient" ? String(row[columns.unit] || "").trim() : "";
+        if (!name || name.length > MAX_NAME_LENGTH || price === null || (importKind === "ingredient" && (!unit || unit.length > MAX_UNIT_LENGTH))) { skipped++; continue; }
+        validByName.set(name, importKind === "menu" ? { name, price } : { name, unit, unitPrice: price });
+      }
+      const existingItems = importKind === "menu" ? menus : ingredients;
+      const changes = [];
+      for (const next of validByName.values()) {
+        const existing = existingItems.find(item => item.name.trim() === next.name.trim());
+        if (existing) {
+          const before = importKind === "menu" ? `${formatYen(existing.price)}` : `${existing.unit} / ${formatYen(existing.unitPrice)}`;
+          const after = importKind === "menu" ? `${formatYen(next.price)}` : `${next.unit} / ${formatYen(next.unitPrice)}`;
+          changes.push({ action: "update", existing, next, before, after });
+        } else changes.push({ action: "add", existing: null, next, before: "—", after: importKind === "menu" ? formatYen(next.price) : `${next.unit} / ${formatYen(next.unitPrice)}` });
+      }
+      return { changes, skipped };
+    }
+
+    function renderImportPreview() {
+      const plan = buildImportPlan();
+      if (plan.error) { showNotice(plan.error); return; }
+      const host = document.getElementById("import-preview");
+      const updates = plan.changes.filter(change => change.action === "update").length;
+      const additions = plan.changes.length - updates;
+      const summary = document.createElement("p"); summary.className = "import-summary"; summary.textContent = `更新${updates}件・追加${additions}件 ／ 読めなかった${plan.skipped}行 ／ 削除0件`;
+      const table = document.createElement("table");
+      const thead = document.createElement("thead"); const header = document.createElement("tr");
+      for (const label of ["区分", "名前", "変更前", "変更後"]) { const th = document.createElement("th"); th.textContent = label; header.append(th); }
+      thead.append(header);
+      const tbody = document.createElement("tbody");
+      for (const change of plan.changes) { const row = document.createElement("tr"); row.append(createCell(change.action === "update" ? "更新" : "追加"), createCell(change.next.name), createCell(change.before), createCell(change.after)); tbody.append(row); }
+      table.append(thead, tbody);
+      const wrap = document.createElement("div"); wrap.className = "table-wrap"; wrap.append(table);
+      host.replaceChildren(summary, wrap, createButton("この内容で取り込む", () => executeImport(plan)));
+    }
+
+    function executeImport(plan) {
+      importUndoSnapshot = { ingredients: clone(ingredients), menus: clone(menus) };
+      for (const change of plan.changes) {
+        if (importKind === "menu") {
+          if (change.existing) change.existing.price = change.next.price;
+          else menus.push({ id: makeId("menu"), name: change.next.name, price: change.next.price, recipe: [] });
+        } else if (change.existing) {
+          change.existing.unit = change.next.unit;
+          appendPriceHistory(change.existing, change.next.unitPrice);
+        } else ingredients.push({ id: makeId("ingredient"), name: change.next.name, unit: change.next.unit, unitPrice: change.next.unitPrice, priceHistory: [{ unitPrice: change.next.unitPrice, updatedAt: todayText() }] });
+      }
+      saveData(); renderIngredients(); renderMenus();
+      document.getElementById("import-undo-button").disabled = false;
+      showNotice(`取り込み完了：更新${plan.changes.filter(change => change.action === "update").length}件・追加${plan.changes.filter(change => change.action === "add").length}件。既存データの削除は0件です`);
+    }
+
+    function undoImport() {
+      if (!importUndoSnapshot) return;
+      ingredients = clone(importUndoSnapshot.ingredients); menus = clone(importUndoSnapshot.menus); importUndoSnapshot = null; selectedMenuId = null;
+      saveData(); renderIngredients(); renderMenus(); document.getElementById("detail-card").classList.remove("visible"); document.getElementById("import-undo-button").disabled = true;
+      showNotice("直前の取り込みを取り消し、元の状態に戻しました");
+    }
+
+    function switchImportKind(kind) {
+      importKind = kind; importedRows = [];
+      document.getElementById("import-menu-tab").classList.toggle("active", kind === "menu");
+      document.getElementById("import-ingredient-tab").classList.toggle("active", kind === "ingredient");
+      document.getElementById("import-text").placeholder = kind === "menu" ? "商品名\t売価\n若鶏の唐揚げ\t680" : "食材名\t単位\t仕入値\n鶏もも肉\tg\t1.10";
+      document.getElementById("mapping-area").replaceChildren(); document.getElementById("import-preview").replaceChildren();
+    }
+
+    // ---- 操作結果の通知 ----
+    function showNotice(message) {
+      const notice = document.getElementById("notice");
+      notice.textContent = message;
+      notice.classList.add("visible");
+      clearTimeout(noticeTimer);
+      noticeTimer = setTimeout(() => notice.classList.remove("visible"), NOTICE_DISPLAY_MS);
+    }
+
+    // ---- バックアップの書き出しと読み込み ----
+    function createBackupFile() {
+      const fileContent = getBackupJson();
+      const downloadUrl = URL.createObjectURL(new Blob([fileContent], { type: "application/json" }));
+      const link = document.createElement("a");
+      const localDate = new Date();
+      const dateText = [localDate.getFullYear(), String(localDate.getMonth() + 1).padStart(2, "0"), String(localDate.getDate()).padStart(2, "0")].join("-");
+      link.href = downloadUrl;
+      link.download = `原価管理バックアップ_${dateText}.json`;
+      link.click();
+      URL.revokeObjectURL(downloadUrl);
+      showNotice("食材とメニューのバックアップを書き出しました");
+    }
+
+    function validateBackupData(backupData) {
+      if (!backupData || typeof backupData !== "object") return null;
+      if (backupData.version === 3) return validateDefinitions(backupData.ingredients, backupData.menus, true);
+      if (backupData.version === 2) return validateDefinitions(backupData.ingredients, backupData.menus);
+      if (backupData.version === 1 && backupData.ingredientPrices && typeof backupData.ingredientPrices === "object" && !Array.isArray(backupData.ingredientPrices)) {
+        const restored = defaultData();
+        for (const ingredient of restored.ingredients) {
+          const price = backupData.ingredientPrices[ingredient.id];
+          if (!isNonNegativeNumber(price)) return null;
+          ingredient.unitPrice = price;
+        }
+        return restored;
+      }
+      return null;
+    }
+
+    async function restoreBackupFile(file) {
+      try {
+        const backupData = JSON.parse(await file.text());
+        const restored = validateBackupData(backupData);
+        if (!restored) throw new Error("invalid backup");
+        ingredients = restored.ingredients;
+        menus = restored.menus;
+        selectedMenuId = null;
+        saveData();
+        renderIngredients();
+        renderMenus();
+        document.getElementById("detail-card").classList.remove("visible");
+        showNotice(backupData.version === 1 ? "旧形式v1を読み込み、初期メニューと仕入値を復元しました" : backupData.version === 2 ? "旧形式v2を読み込み、仕入値履歴を補完しました" : "v3バックアップを履歴込みで復元しました");
+      } catch (_) {
+        showNotice("バックアップを読み込めませんでした。名前・単位・金額・使用量と食材の参照を確認してください");
+      }
+    }
+
+    // ---- 操作ボタンと初期表示 ----
+    ({ ingredients, menus } = loadData());
+    document.getElementById("threshold").addEventListener("input", renderMenus);
+    document.getElementById("import-open-button").addEventListener("click", () => { document.getElementById("import-panel").classList.add("visible"); document.getElementById("import-panel").scrollIntoView({ behavior: "smooth", block: "start" }); });
+    document.getElementById("import-close-button").addEventListener("click", () => document.getElementById("import-panel").classList.remove("visible"));
+    document.getElementById("import-menu-tab").addEventListener("click", () => switchImportKind("menu"));
+    document.getElementById("import-ingredient-tab").addEventListener("click", () => switchImportKind("ingredient"));
+    document.getElementById("import-read-button").addEventListener("click", showImportMapping);
+    document.getElementById("import-file-input").addEventListener("change", async event => {
+      const [file] = event.target.files;
+      if (!file) return;
+      try { document.getElementById("import-text").value = await file.text(); showImportMapping(); }
+      catch (_) { showNotice("CSVファイルを読み込めませんでした"); }
+      event.target.value = "";
+    });
+    document.getElementById("import-undo-button").addEventListener("click", undoImport);
+    document.getElementById("history-close-button").addEventListener("click", () => document.getElementById("history-panel").classList.remove("visible"));
+    document.getElementById("add-menu-button").addEventListener("click", showMenuAddForm);
+    document.getElementById("add-ingredient-button").addEventListener("click", showIngredientAddForm);
+    document.getElementById("backup-write-button").addEventListener("click", createBackupFile);
+    document.getElementById("backup-read-button").addEventListener("click", () => document.getElementById("backup-file-input").click());
+    document.getElementById("backup-file-input").addEventListener("change", async event => {
+      const [file] = event.target.files;
+      if (file) await restoreBackupFile(file);
+      event.target.value = "";
+    });
+    // ---- 白紙に戻す・見本データを入れる（初回空スタート運用・2026-09-06） ----
+    function replaceAllData(next, noticeText) {
+      ({ ingredients, menus } = next);
+      selectedMenuId = null;
+      importUndoSnapshot = null;
+      document.getElementById("import-undo-button").disabled = true;
+      try { localStorage.removeItem(V2_STORAGE_KEY); localStorage.removeItem(LEGACY_STORAGE_KEY); } catch (_) { /* 旧キーの掃除に失敗しても継続 */ }
+      saveData();
+      renderIngredients();
+      renderMenus();
+      document.getElementById("detail-card").classList.remove("visible");
+      showNotice(noticeText);
+    }
+    document.getElementById("reset-button").addEventListener("click", () => {
+      if (!confirm("メニューと食材をすべて消して白紙に戻しますか？（バックアップを取っていない内容は元に戻せません）")) return;
+      replaceAllData(emptyData(), "白紙に戻しました");
+    });
+    document.getElementById("sample-button").addEventListener("click", () => {
+      if ((ingredients.length || menus.length) && !confirm("今の内容を消して見本データ（架空の居酒屋10品）に置き換えますか？")) return;
+      replaceAllData(defaultData(), "見本データを入れました");
+    });
+
+    renderIngredients();
+    renderMenus();
+    if (brokenSaveNotice) showNotice(brokenSaveNotice);
+    window.__test__ = { getBackupJson };
+  </script>
+</body>
+</html>

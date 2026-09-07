@@ -1,0 +1,1769 @@
+<!--
+  資金繰り表：共通サイドバー、指標タイル、白地パネルで構成した単一HTMLです。
+  画面入力、表CSV、銀行明細CSV、売上JSON、繰り返しルールから予定と実績を管理します。
+  データの流れ：端末内のファイル選択または画面入力 → 内容確認 → 表へ反映 → localStorageへ保存します。
+  CSVはUTF-8とShift_JISを判定し、列対応と摘要の完全一致による分類結果を次回用に端末内へ記憶します。表CSVは科目が空の行の「相手」を科目として取り込みます。
+  保存内容は型検証して読み込み、追加設定を含むバックアップとして書き出し・復元できます。
+  入力データは利用者の端末内だけで扱い、外部への送信・外部通信は一切行いません。
+-->
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>資金繰り表</title>
+  <style>
+    /* ---- 共通デザイン：色・文字・画面骨格 ---- */
+    :root {
+      color-scheme: light;
+      --bg: #f4f6f7;
+      --side: #ffffff;
+      --card: #ffffff;
+      --line: #e3e6e9;
+      --row-line: #eef0f2;
+      --ink: #1b2126;
+      --muted: #6b737b;
+      --accent: #1f6f6b;
+      --accent-soft: #e6f2f1;
+      --warn: #b4452a;
+      --warn-soft: #fff7f4;
+      --warn-line: #f3cfc3;
+    }
+    * { box-sizing: border-box; }
+    html, body { max-width: 100%; overflow-x: hidden; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic", "Noto Sans JP", sans-serif;
+      font-size: 14px;
+      font-variant-numeric: tabular-nums;
+      -webkit-font-smoothing: antialiased;
+    }
+    button, input, select { font: inherit; color: inherit; }
+    .serif, h1, h2 { font-family: "Hiragino Mincho ProN", "Yu Mincho", "Noto Serif JP", serif; }
+    .app { display: flex; min-height: 100vh; }
+
+    /* ---- 左サイドバー ---- */
+    .side {
+      flex: 0 0 232px;
+      width: 232px;
+      min-width: 0;
+      padding: 26px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      background: var(--side);
+      border-right: 1px solid var(--line);
+    }
+    .brand { padding: 0 12px 18px; color: var(--muted); font-size: 11px; letter-spacing: .22em; }
+    .nav {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-height: 42px;
+      padding: 11px 12px;
+      border-radius: 8px;
+      color: var(--ink);
+      font-size: 14px;
+      text-decoration: none;
+      white-space: nowrap;
+    }
+    .nav .no { flex: 0 0 20px; color: var(--muted); font-size: 11px; letter-spacing: .05em; }
+    .nav.on { background: var(--accent-soft); color: var(--accent); font-weight: 700; }
+    .nav.on .no { color: var(--accent); }
+    .nav.off { color: var(--muted); opacity: .55; cursor: default; }
+    .nav.off .tag { margin-left: auto; font-size: 10px; }
+    .side .foot { margin-top: auto; padding: 12px; color: var(--muted); font-size: 11px; line-height: 1.6; }
+
+    /* ---- ヘッダと操作 ---- */
+    .main { flex: 1 1 auto; min-width: 0; padding: 30px 36px; display: flex; flex-direction: column; gap: 22px; }
+    .head { display: flex; align-items: flex-end; gap: 18px; flex-wrap: wrap; }
+    .title-block { flex: 0 0 auto; }
+    .header-meta { display: flex; align-items: flex-end; gap: 14px; color: var(--muted); font-size: 11px; letter-spacing: .08em; }
+    .header-meta label { display: grid; gap: 3px; }
+    .header-meta .company-field { width: 190px; }
+    .header-meta .date-field { width: 138px; }
+    .line-input {
+      height: 30px;
+      padding: 4px 8px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--card);
+      outline: 0;
+      letter-spacing: 0;
+    }
+    .line-input:focus, select:focus, input:focus-visible, button:focus-visible, .editable-name:focus {
+      outline: 2px solid var(--accent);
+      outline-offset: 1px;
+    }
+    h1 { margin: 6px 0 0; font-size: 30px; font-weight: 600; letter-spacing: .06em; }
+    .head-actions { flex: 1 1 560px; display: flex; justify-content: flex-end; align-items: center; gap: 8px; flex-wrap: wrap; }
+    button {
+      min-height: 38px;
+      padding: 0 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--card);
+      color: var(--ink);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    button:hover { background: var(--bg); }
+    button:disabled { cursor: default; opacity: .55; }
+    button.primary { border-color: var(--accent); background: var(--accent); color: var(--card); font-weight: 700; }
+    button.primary:hover { background: var(--accent); }
+    .compact-btn, .remove-btn, .section-add, .account-actions button { min-height: 28px; padding: 0 9px; font-size: 11px; }
+    .message { margin: 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); font-size: 13px; line-height: 1.5; white-space: pre-wrap; }
+    .message.error { border-color: var(--warn-line); background: var(--warn-soft); color: var(--warn); }
+
+    /* ---- 指標タイル ---- */
+    .tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+    .tile { min-width: 0; padding: 18px 20px; display: flex; flex-direction: column; gap: 6px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); }
+    .tile .k { color: var(--muted); font-size: 11px; letter-spacing: .12em; }
+    .tile .v { min-width: 0; font-size: clamp(24px, 2.6vw, 42px); line-height: 1.05; letter-spacing: -.01em; white-space: nowrap; } /* 金額は桁の途中で折り返さない。狭い幅では文字を縮める */
+    .tile .v small { margin-left: 5px; color: var(--muted); font-family: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic", "Noto Sans JP", sans-serif; font-size: 14px; letter-spacing: 0; }
+    .tile .hint { min-height: 1.5em; color: var(--muted); font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
+    .tile.status .v { font-size: 28px; line-height: 1.35; letter-spacing: .03em; }
+    .tile.ok .v { color: var(--accent); }
+    .tile.warn { border-color: var(--warn-line); background: var(--warn-soft); }
+    .tile.warn .k, .tile.warn .v, .tile.warn .hint { color: var(--warn); }
+
+    /* ---- 白地パネルと表 ---- */
+    .panel { min-width: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 12px; background: var(--card); }
+    .panel-bar { min-height: 56px; padding: 12px 18px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; border-bottom: 1px solid var(--line); }
+    .panel-bar h2 { margin: 0; font-size: 18px; font-weight: 600; letter-spacing: .06em; }
+    .panel-bar-spacer { flex: 1 1 auto; }
+    .panel-controls { display: flex; align-items: center; justify-content: flex-end; gap: 12px; flex-wrap: wrap; color: var(--muted); font-size: 12px; }
+    .panel-controls label { display: flex; align-items: center; gap: 6px; }
+    .panel-controls input[type="month"] { height: 34px; padding: 4px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); }
+    .panel-scroll { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+    th, td { height: 38px; padding: 7px 10px; border-right: 1px solid var(--row-line); border-bottom: 1px solid var(--row-line); font-size: 14px; vertical-align: middle; }
+    th:last-child, td:last-child { border-right: 0; }
+    tbody tr:last-child td, tfoot tr:last-child td { border-bottom: 0; }
+    th { color: var(--muted); background: var(--card); font-size: 11px; font-weight: 600; text-align: center; letter-spacing: .08em; }
+    .account-table { min-width: 470px; }
+    .account-table th:nth-child(1) { width: 48%; }
+    .account-table th:nth-child(2) { width: 38%; }
+    .account-table th:nth-child(3) { width: 14%; }
+    .editable-name { min-height: 1em; padding: 3px 5px; border-radius: 8px; outline: 0; }
+    .money-input { width: 100%; padding: 4px; border: 0; border-radius: 8px; outline: 0; background: transparent; text-align: right; font: inherit; font-variant-numeric: tabular-nums; }
+    .money-input:focus, .editable-name:focus { background: var(--accent-soft); }
+    .amount, .calculated { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .negative { color: var(--warn); }
+    .calculated, .account-total td, .total-row td, .balance-row td, .closing-row td { background: var(--bg); }
+    .account-total td, .total-row td, .balance-row td, .closing-row td { font-weight: 700; }
+    .account-actions { display: flex; align-items: center; gap: 8px; }
+    .cashflow { min-width: 1130px; }
+    .cashflow.six-months { min-width: 1260px; }
+    .cashflow col.label-col { width: 190px; }
+    .cashflow col.action-col { width: 52px; }
+    .cashflow .month-head { color: var(--ink); font-weight: 700; border-bottom: 0; }
+    .cashflow .kind-head { border-top: 0; font-size: 11px; }
+    .row-label { padding-left: 14px; }
+    .section-row td { background: var(--bg); font-weight: 700; }
+    .section-row .section-label { padding-left: 10px; }
+    .row-action { text-align: center; }
+    .section-add { margin-left: 8px; vertical-align: middle; }
+    .note { padding: 10px 18px 12px; color: var(--muted); font-size: 11px; }
+    .shortage-legend { padding: 0 18px 12px; color: var(--warn); font-size: 11px; }
+    .cashflow td.cash-shortage { border: 1px solid var(--warn-line); background: var(--warn-soft); color: var(--warn); }
+    .settings-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr); gap: 14px; }
+    .settings-grid .rules-panel { grid-row: span 2; }
+    .rule-table { min-width: 720px; }
+    .rule-table th:nth-child(1) { width: 25%; }
+    .rule-table th:nth-child(2) { width: 12%; }
+    .rule-table th:nth-child(3) { width: 25%; }
+    .rule-table th:nth-child(4) { width: 10%; }
+    .rule-table th:nth-child(5) { width: 16%; }
+    .rule-table td:last-child, .store-table td:last-child { text-align: center; }
+    .store-table { min-width: 360px; }
+    .store-table th:first-child { width: 68%; }
+    .empty-note { padding: 12px; color: var(--muted); }
+
+    /* ---- ダイアログ（列対応・分類・ルール編集） ---- */
+    .modal { position: fixed; inset: 0; z-index: 10; display: grid; place-items: center; padding: 20px; background: rgb(27 33 38 / 45%); }
+    .modal[hidden] { display: none; }
+    .modal-panel { width: min(920px, 100%); max-height: 90vh; overflow: auto; padding: 18px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); }
+    .modal-panel h2 { margin: 0 0 12px; font-size: 19px; letter-spacing: .06em; }
+    .modal-content { display: grid; gap: 10px; }
+    .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 15px; }
+    .mapping-grid, .rule-form { display: grid; grid-template-columns: 160px minmax(180px, 1fr); gap: 8px; align-items: center; }
+    .mapping-grid select, .rule-form input, .rule-form select, .modal-content > select, .classification-table select {
+      width: 100%; min-height: 38px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--card);
+    }
+    .preview-wrap { overflow-x: auto; }
+    .preview-table { min-width: 600px; table-layout: auto; }
+    .preview-table th, .preview-table td { max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .classification-table { min-width: 620px; table-layout: auto; }
+    .auto-mark { color: var(--accent); font-weight: 700; }
+
+    /* ---- スマホ表示 ---- */
+    @media (max-width: 800px) {
+      .app { flex-direction: column; }
+      .side { width: 100%; flex: 0 0 auto; flex-direction: row; flex-wrap: nowrap; padding: 10px; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--line); }
+      .side .foot, .brand { display: none; }
+      .nav { flex: 0 0 auto; min-height: 38px; padding: 9px 10px; }
+      .nav.off .tag { margin-left: 4px; }
+      .main { width: 100%; padding: 18px; gap: 16px; }
+      .head { align-items: stretch; }
+      .title-block { width: 100%; }
+      .head-actions { flex-basis: 100%; justify-content: flex-start; }
+      .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .settings-grid { grid-template-columns: minmax(0, 1fr); }
+      .settings-grid .rules-panel { grid-row: auto; }
+    }
+    @media (max-width: 480px) {
+      .main { padding: 14px 12px; }
+      .header-meta { align-items: stretch; gap: 8px; }
+      .header-meta label { min-width: 0; flex: 1 1 0; }
+      .header-meta .company-field, .header-meta .date-field { width: 100%; min-width: 0; }
+      h1 { font-size: 27px; }
+      .head-actions button { flex: 1 1 150px; padding-inline: 8px; }
+      .tiles { gap: 8px; }
+      .tile { padding: 14px 12px; }
+      .tile .v { font-size: 28px; }
+      .tile.status .v { font-size: 22px; }
+      .panel-bar { padding: 12px; }
+      .panel-controls { width: 100%; justify-content: flex-start; }
+      .mapping-grid, .rule-form { grid-template-columns: 1fr; }
+      .modal { padding: 10px; }
+    }
+
+    /* ---- 印刷（A4横1枚の銀行提出用） ---- */
+    @page { size: A4 landscape; margin: 6mm; }
+    @media print {
+      html, body { width: 100%; height: 100%; overflow: visible; background: #ffffff; color: #000; }
+      .side, .tiles, .head-actions, .edit-ui, .row-action, .action-col, .note, .settings-grid, .message, .modal, .cashflow-panel .panel-bar { display: none !important; }
+      .app { display: block; min-height: 0; }
+      .main { width: auto; min-height: 0; padding: 0; display: block; }
+      .head { display: block; margin-bottom: 2mm; }
+      .title-block { width: 100%; display: flex; flex-direction: column; }
+      h1 { order: -1; margin: 0 0 2mm; text-align: center; font-size: 16pt; }
+      .header-meta { justify-content: flex-end; color: #000; font-size: 7pt; }
+      .header-meta label { display: grid; grid-template-columns: auto 42mm; align-items: end; gap: 1.5mm; }
+      .header-meta .company-field, .header-meta .date-field { width: 42mm; }
+      .line-input { height: 5mm; padding: 0 1mm; border: 0; border-bottom: 1px solid #000; border-radius: 0; background: transparent; }
+      .panel { overflow: visible; border: 0; border-radius: 0; }
+      .account-panel { width: 92mm; margin-bottom: 2mm; }
+      .account-panel .panel-bar { min-height: 0; padding: 0 0 .7mm; border: 0; }
+      .account-panel .panel-bar h2 { font-size: 8pt; }
+      .panel-scroll, .cashflow-scroll { overflow: visible; }
+      .account-table { min-width: 0; }
+      th, td { height: 4.2mm; padding: .2mm .7mm; border: 1px solid #000 !important; background: #ffffff !important; color: #000 !important; font-size: 6.7pt; }
+      .cashflow { min-width: 0 !important; margin-top: 2mm; page-break-inside: avoid; }
+      .cashflow col.label-col { width: 32mm; }
+      .editable-name:focus, .money-input:focus { outline: 0; background: transparent; }
+      .cashflow td.cash-shortage { border: 2px solid #000 !important; }
+      .shortage-legend { padding: 1mm 0 0; color: #000; font-size: 6.5pt; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="side" aria-label="業務ツール">
+      <div class="brand">業務ツール</div>
+      <div id="sidebarNav"></div>
+      <div class="foot">データはこのパソコンの中にだけ保存されます。<br>ネット通信なし。<br>画面バージョン: 2026-09-06</div>
+    </aside>
+
+    <main class="main">
+      <header class="head">
+        <div class="title-block">
+          <div class="header-meta">
+            <label><span>会社名</span><input id="company" class="line-input company-field" type="text" placeholder="（会社名）"></label>
+            <label><span>作成日</span><input id="createdDate" class="line-input date-field" type="date"></label>
+          </div>
+          <h1>資金繰り表</h1>
+        </div>
+        <div class="head-actions edit-ui">
+          <button id="spreadsheetImportBtn" type="button">今の表を読み込む</button>
+          <input id="spreadsheetFileInput" type="file" accept="text/csv,.csv" hidden>
+          <button id="bankImportBtn" type="button">銀行明細読み込み</button>
+          <input id="bankFileInput" type="file" accept="text/csv,.csv" hidden>
+          <button id="salesImportBtn" type="button">売上データ読み込み</button>
+          <input id="salesFileInput" type="file" accept="application/json,.json" hidden>
+          <button id="paymentsImportBtn" type="button">支払予定を読み込む</button>
+          <input id="paymentsFileInput" type="file" accept="application/json,.json" hidden>
+          <button id="ledgerExportBtn" type="button">PL用に書き出す</button>
+          <button id="exportBackupBtn" type="button">バックアップ書き出し</button>
+          <button id="importBackupBtn" type="button">バックアップ読み込み</button>
+          <input id="backupFileInput" type="file" accept="application/json,.json" hidden>
+          <button id="resetBtn" type="button">白紙に戻す</button>
+          <button id="sampleBtn" type="button">見本データを入れる</button>
+          <button id="printBtn" class="primary" type="button">印刷</button>
+        </div>
+      </header>
+
+      <div id="messageArea" class="message edit-ui" role="status" hidden></div>
+
+      <section class="tiles" aria-label="資金指標">
+        <div class="tile">
+          <div class="k">口座残高合計</div>
+          <div class="v serif"><span id="accountTotalMetric">0</span><small>円</small></div>
+          <div id="accountBreakdownMetric" class="hint">口座A 0円 ／ 口座B 0円</div>
+        </div>
+        <div class="tile">
+          <div class="k">今月の翌月繰越（予定）</div>
+          <div class="v serif"><span id="currentClosingMetric">0</span><small>円</small></div>
+          <div id="currentClosingHint" class="hint"></div>
+        </div>
+        <div class="tile">
+          <div class="k">3ヶ月後の翌月繰越（予定）</div>
+          <div class="v serif"><span id="futureClosingMetric">0</span><small>円</small></div>
+          <div id="futureClosingHint" class="hint"></div>
+        </div>
+        <div id="shortageTile" class="tile status ok">
+          <div class="k">資金不足月</div>
+          <div id="shortageMetric" class="v serif">不足なし</div>
+          <div class="hint">当月から3ヶ月先の予定</div>
+        </div>
+      </section>
+
+      <section class="panel account-panel">
+        <div class="panel-bar">
+          <h2>口座残高内訳</h2>
+          <div class="panel-bar-spacer"></div>
+          <div class="account-actions edit-ui"><button id="addAccount" class="compact-btn" type="button">＋ 口座を追加</button></div>
+        </div>
+        <div class="panel-scroll">
+          <table class="account-table">
+            <thead><tr><th>口座名</th><th>現在残高</th><th class="edit-ui">操作</th></tr></thead>
+            <tbody id="accountBody"></tbody>
+            <tfoot><tr class="account-total"><td>内訳合計</td><td id="accountTotal" class="calculated">0</td><td class="edit-ui"></td></tr></tfoot>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel cashflow-panel">
+        <div class="panel-bar edit-ui">
+          <h2>月別 資金繰り</h2>
+          <div class="panel-bar-spacer"></div>
+          <div class="panel-controls">
+            <label>開始年月 <input id="startMonth" type="month" value="2026-09"></label>
+            <label><input id="sixMonthToggle" type="checkbox"> 6ヶ月表示</label>
+          </div>
+        </div>
+        <div class="cashflow-scroll panel-scroll" role="region" aria-label="資金繰り表（横にスクロールできます）" tabindex="0">
+          <table id="cashflowTable" class="cashflow">
+            <colgroup id="cashflowCols"></colgroup>
+            <thead id="cashflowHead"></thead>
+            <tbody id="cashflowBody"></tbody>
+          </table>
+        </div>
+        <div id="shortageLegend" class="shortage-legend" hidden>※印の月は残高が不足します</div>
+        <div class="note edit-ui">科目名・口座名はクリックして編集できます。金額は円単位で入力してください。</div>
+      </section>
+
+      <div class="settings-grid edit-ui">
+        <section class="panel rules-panel">
+          <div class="panel-bar">
+            <h2>毎月の決まった入出金</h2>
+            <div class="panel-bar-spacer"></div>
+            <button id="addRuleBtn" class="compact-btn" type="button">＋ ルールを追加</button>
+            <button id="applyRulesBtn" class="compact-btn" type="button">予定へ反映</button>
+          </div>
+          <div class="panel-scroll">
+            <table class="rule-table">
+              <thead><tr><th>名前</th><th>区分</th><th>科目</th><th>毎月の日</th><th>金額</th><th>操作</th></tr></thead>
+              <tbody id="ruleBody"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-bar">
+            <h2>店名設定</h2>
+            <div class="panel-bar-spacer"></div>
+            <button id="addStoreBtn" class="compact-btn" type="button">＋ 店を追加</button>
+          </div>
+          <div class="panel-scroll">
+            <table class="store-table">
+              <thead><tr><th>店名</th><th>操作</th></tr></thead>
+              <tbody id="storeBody"></tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <div id="modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle" hidden>
+    <section class="modal-panel">
+      <h2 id="modalTitle"></h2>
+      <div id="modalContent" class="modal-content"></div>
+      <div id="modalActions" class="modal-actions"></div>
+    </section>
+  </div>
+
+  <script>
+  (() => {
+    'use strict';
+
+    // ---- サイドバー項目一覧（導入済みフラグはここだけ触る） ----
+    const SIDEBAR_TOOLS = [
+      { no: '01', name: '日報分析', file: './日報分析.html', installed: true },
+      { no: '02', name: '資金繰り表', file: './資金繰り表.html', installed: true },
+      { no: '03', name: '原価管理', file: './原価管理.html', installed: true },
+      { no: '04', name: '月次PL', file: './月次PL.html', installed: true },
+      { no: '05', name: '給与明細作成', file: './給与明細作成.html', installed: true },
+      { no: '06', name: '支払期日管理', file: './支払期日管理.html', installed: true },
+      { no: '07', name: '採用管理', file: './採用管理.html', installed: true },
+      { no: '08', name: '補助金チェッカー', file: './補助金チェッカー.html', installed: true },
+      { no: '09', name: '備品発注リスト', file: './備品発注リスト.html', installed: true }
+    ];
+    const CURRENT_TOOL_NO = '02'; // このファイル自身。現在ページの強調に使う
+    (() => {
+      const nav = document.getElementById('sidebarNav');
+      SIDEBAR_TOOLS.forEach(tool => {
+        const isCurrent = tool.no === CURRENT_TOOL_NO;
+        const item = document.createElement(tool.installed ? 'a' : 'div');
+        item.className = 'nav' + (isCurrent ? ' on' : '') + (tool.installed ? '' : ' off');
+        if (tool.installed) item.href = tool.file;
+        if (isCurrent) item.setAttribute('aria-current', 'page');
+        const no = document.createElement('span'); no.className = 'no'; no.textContent = tool.no;
+        item.appendChild(no);
+        item.appendChild(document.createTextNode(tool.name));
+        if (!tool.installed) { const tag = document.createElement('span'); tag.className = 'tag'; tag.textContent = '未導入'; item.appendChild(tag); }
+        nav.appendChild(item);
+      });
+    })();
+
+    // ---- 設定値と初期データ ----
+    const STORAGE_KEY = 'cashflow-sheet-v1';
+    const BROKEN_STORAGE_KEY = 'cashflow-sheet-v1-broken';
+    const BACKUP_KIND = 'shikinguri-backup';
+    const BACKUP_VERSION = 1;
+    const ROLLING_MONTH_COUNT = 5;
+    const LEGACY_MONTH_COUNT = 6;
+    // 前月は実績確認用とし、当月から3か月先までを同時に表示するため5列にする。
+    const ROLLING_START_OFFSET = -1;
+    const RULE_FUTURE_MONTH_COUNT = 3;
+    const ENTRY_KINDS = ['plan', 'actual'];
+    const DEFAULT_STORE_NAMES = ['店A', '店B'];
+    const DEFAULT_STORE = '共通';
+    const defaults = () => {
+      const currentMonth = monthText(new Date());
+      return ({
+        startMonth: currentMonth, dataBaseMonth: currentMonth, company: '', createdDate: '', nextId: 100,
+        accounts: [{ id: 'a1', name: '口座A', value: '' }, { id: 'a2', name: '口座B', value: '' }],
+        income: [
+          { id: 'cash_sales', name: '現金売上' }, { id: 'receivables', name: '売掛金回収' }, { id: 'other_income', name: 'その他収入' }
+        ],
+        expense: [
+          { id: 'cash_purchase', name: '現金仕入' }, { id: 'payables', name: '買掛金支払' }, { id: 'payroll', name: '人件費' },
+          { id: 'rent', name: '家賃' }, { id: 'utilities', name: '水道光熱費' }, { id: 'expenses', name: '諸経費' },
+          { id: 'interest', name: '支払利息' }, { id: 'other_expense', name: 'その他支出' }
+        ],
+        finance: [
+          { id: 'borrowing', name: '借入金調達', sign: 1 }, { id: 'repayment', name: '借入金返済', sign: -1 }, { id: 'capital', name: '設備投資等', sign: -1 }
+        ],
+        values: {}, opening: { '0-plan': '', '0-actual': '' },
+        columnMappings: { spreadsheet: {}, bank: {} }, bankLearning: {}, bankStoreLearning: {},
+        paymentsRows: [], paymentCategoryLearning: {},
+        ledgerRows: [], recurringRules: [], storeNames: [...DEFAULT_STORE_NAMES], viewMode: 'rolling5'
+      });
+    };
+    const byId = id => document.getElementById(id);
+    let startupMessage = '';
+    let state = load();
+    let selectedBankAccountId = '';
+
+    // ---- 安全なDOM生成 ----
+    function create(tagName, options = {}, text = null) {
+      const node = document.createElement(tagName);
+      Object.entries(options).forEach(([name, value]) => {
+        if (name === 'className') node.className = value;
+        else if (name === 'dataset') Object.entries(value).forEach(([dataName, dataValue]) => { node.dataset[dataName] = String(dataValue); });
+        else if (name in node && name !== 'style') node[name] = value;
+        else node.setAttribute(name, String(value));
+      });
+      if (text !== null) node.textContent = String(text);
+      return node;
+    }
+    function clear(node) { node.replaceChildren(); }
+    function appendCell(row, tagName, text = '', className = '') {
+      const cell = create(tagName, className ? { className } : {}, text);
+      row.appendChild(cell);
+      return cell;
+    }
+    function deepCopy(value) { return JSON.parse(JSON.stringify(value)); }
+
+    // ---- ブラウザ内への保存と検証付き読み込み ----
+    function normalizeLoadedState(saved) {
+      const base = defaults();
+      const savedSubjects = ['income', 'expense', 'finance'].flatMap(section =>
+        (Array.isArray(saved[section]) ? saved[section] : []).map(row => ({ ...row, section }))
+      );
+      return {
+        ...base, ...saved,
+        // 旧版の相対月データは、その保存時の開始年月を基準月として引き継ぐ。
+        dataBaseMonth: saved.dataBaseMonth || saved.startMonth,
+        columnMappings: { ...base.columnMappings, ...(saved.columnMappings || {}) },
+        bankLearning: { ...(saved.bankLearning || {}) },
+        bankStoreLearning: { ...(saved.bankStoreLearning || {}) },
+        paymentsRows: Array.isArray(saved.paymentsRows) ? saved.paymentsRows.map(row => ({ ...row })) : [],
+        paymentCategoryLearning: { ...(saved.paymentCategoryLearning || {}) },
+        // 旧明細は科目名が変わる前にIDを補い、以後の区分判定を科目IDで安定させる。
+        ledgerRows: Array.isArray(saved.ledgerRows) ? saved.ledgerRows.map(row => {
+          if (typeof row.subjectId === 'string') return row;
+          const subject = savedSubjects.find(item => item.name === row.category);
+          return subject ? { ...row, subjectId: subject.id } : row;
+        }) : [],
+        recurringRules: Array.isArray(saved.recurringRules) ? saved.recurringRules : [],
+        // 店名設定が無い旧版データは従来の2店を引き継ぐ。
+        storeNames: Array.isArray(saved.storeNames) ? [...saved.storeNames] : [...base.storeNames],
+        viewMode: saved.viewMode === 'six' ? 'six' : 'rolling5'
+      };
+    }
+    function load() {
+      const savedText = localStorage.getItem(STORAGE_KEY);
+      if (savedText === null) return defaults();
+      try {
+        const saved = JSON.parse(savedText);
+        if (isRecord(saved)) {
+          const repaired = { ...saved };
+          const invalidStartMonth = !isValidMonth(repaired.startMonth);
+          if (invalidStartMonth) repaired.startMonth = monthText(new Date());
+          repaired.values = sanitizeAmountRecord(repaired.values, isValidValueKey, repaired.dataBaseMonth || repaired.startMonth);
+          repaired.opening = sanitizeAmountRecord(repaired.opening, isValidOpeningKey, repaired.dataBaseMonth || repaired.startMonth);
+          if (isValidStateData(repaired)) {
+            if (invalidStartMonth) startupMessage = '保存データの開始年月が壊れていたため今月に戻しました';
+            if (JSON.stringify(repaired) !== JSON.stringify(saved)) localStorage.setItem(STORAGE_KEY, JSON.stringify(repaired));
+            return normalizeLoadedState(repaired);
+          }
+        }
+      } catch (_) {
+        // 不正なJSONも型不正と同じく初期状態に戻す。
+      }
+      localStorage.setItem(BROKEN_STORAGE_KEY, savedText);
+      localStorage.removeItem(STORAGE_KEY);
+      alert('保存データが壊れていたため、白紙で開きました。バックアップがあれば『バックアップ読み込み』で復元できます。');
+      return defaults();
+    }
+    function save() { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+    function hasEnteredData() {
+      return JSON.stringify(state) !== JSON.stringify(defaults());
+    }
+    function insertSampleData(options = {}) {
+      if (options.confirm !== false && hasEnteredData() && !confirm('今のデータを置き換えますか？')) return false;
+      state = defaults();
+      state.accounts[0].value = '1500000';
+      state.accounts[1].value = '500000';
+      const sampleRows = [
+        ['cash_sales', 3200000], ['cash_purchase', 1050000], ['payroll', 960000], ['rent', 560000],
+        ['utilities', 180000], ['expenses', 320000], ['repayment', 80000]
+      ];
+      [-1, 0, 1].forEach(offset => sampleRows.forEach(([rowId, amount]) => {
+        state.values[key(rowId, offset, 'plan')] = String(amount);
+      }));
+      save();
+      renderAll();
+      showMessage('架空の見本データを入れました。');
+      return true;
+    }
+
+    // ---- 金額・年月・表示文字の整形 ----
+    function numberOf(value) {
+      const compact = String(value ?? '').replace(/[，,\s円]/g, '');
+      const isNegative = /^[▲△−-]/.test(compact) || /^[（(].*[）)]$/.test(compact);
+      const normalized = compact.replace(/^[▲△−-]/, '').replace(/^[（(]|[）)]$/g, '').replace(/[^0-9+\-.]/g, '');
+      const numericValue = Number(normalized);
+      return Number.isFinite(numericValue) ? (isNegative ? -Math.abs(numericValue) : numericValue) : 0;
+    }
+    function rawNumber(value) {
+      const numericValue = numberOf(value);
+      return numericValue === 0 && !/[0-9]/.test(String(value)) ? '' : String(numericValue);
+    }
+    function format(number) {
+      const value = Number(number) || 0;
+      return value < 0 ? '▲' + Math.abs(value).toLocaleString('ja-JP') : value.toLocaleString('ja-JP');
+    }
+    function localDateText() {
+      const today = new Date();
+      return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    }
+    function monthText(date) { return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`; }
+    function dateFromMonth(month) {
+      const match = /^(\d{4})-(\d{2})$/.exec(month);
+      return match ? new Date(Number(match[1]), Number(match[2]) - 1, 1) : new Date();
+    }
+    function addMonths(month, offset) {
+      const date = dateFromMonth(month);
+      return monthText(new Date(date.getFullYear(), date.getMonth() + offset, 1));
+    }
+    function monthOffset(month) {
+      const base = dateFromMonth(state.dataBaseMonth);
+      const target = dateFromMonth(month);
+      return (target.getFullYear() - base.getFullYear()) * 12 + target.getMonth() - base.getMonth();
+    }
+    function displayedMonths() {
+      const isSixMonths = state.viewMode === 'six';
+      const firstMonth = isSixMonths ? state.startMonth : addMonths(monthText(new Date()), ROLLING_START_OFFSET);
+      const count = isSixMonths ? LEGACY_MONTH_COUNT : ROLLING_MONTH_COUNT;
+      return Array.from({ length: count }, (_, index) => {
+        const month = addMonths(firstMonth, index);
+        return { month, offset: monthOffset(month) };
+      });
+    }
+    function monthLabel(month) {
+      const [year, monthNumber] = month.split('-').map(Number);
+      return `${year}年${monthNumber}月`;
+    }
+    function key(rowId, monthIndex, kind) { return `${rowId}|${monthIndex}|${kind}`; }
+
+    // ---- 帳票の再描画 ----
+    function createMoneyInput(rowId, monthIndex, kind, source = 'values') {
+      const stored = source === 'opening' ? state.opening[`${monthIndex}-${kind}`] : state.values[key(rowId, monthIndex, kind)];
+      const input = create('input', {
+        className: 'money-input', inputMode: 'decimal', value: stored || '',
+        dataset: { source, row: rowId, month: monthIndex, kind },
+        ariaLabel: `${rowId} ${monthLabel(addMonths(state.dataBaseMonth, monthIndex))} ${kind === 'plan' ? '予定' : '実績'}`
+      });
+      formatInput(input);
+      return input;
+    }
+    function createInputCell(rowId, monthIndex, kind, source = 'values') {
+      const cell = create('td');
+      cell.appendChild(createMoneyInput(rowId, monthIndex, kind, source));
+      return cell;
+    }
+    function createCalculatedCell(id) { return create('td', { id, className: 'calculated' }, '0'); }
+    function renderColumns(months) {
+      const group = byId('cashflowCols');
+      clear(group);
+      group.appendChild(create('col', { className: 'label-col' }));
+      for (let index = 0; index < months.length * 2; index += 1) group.appendChild(create('col'));
+      group.appendChild(create('col', { className: 'action-col' }));
+      byId('cashflowTable').classList.toggle('six-months', state.viewMode === 'six');
+    }
+    function renderHead(months) {
+      const head = byId('cashflowHead');
+      clear(head);
+      const monthRow = create('tr');
+      const labelHead = appendCell(monthRow, 'th', '科目');
+      labelHead.rowSpan = 2;
+      months.forEach(item => {
+        const cell = appendCell(monthRow, 'th', monthLabel(item.month), 'month-head');
+        cell.colSpan = 2;
+      });
+      const actionHead = appendCell(monthRow, 'th', '操作', 'edit-ui');
+      actionHead.rowSpan = 2;
+      const kindRow = create('tr');
+      months.forEach(() => {
+        appendCell(kindRow, 'th', '予定', 'kind-head');
+        appendCell(kindRow, 'th', '実績', 'kind-head');
+      });
+      head.append(monthRow, kindRow);
+    }
+    function renderAccounts() {
+      const body = byId('accountBody');
+      clear(body);
+      state.accounts.forEach(account => {
+        const row = create('tr');
+        const nameCell = create('td');
+        nameCell.appendChild(create('div', { className: 'editable-name', contentEditable: 'true', dataset: { accountName: account.id } }, account.name));
+        const valueCell = create('td');
+        const input = create('input', { className: 'money-input account-value', inputMode: 'decimal', value: account.value || '', dataset: { accountValue: account.id } });
+        formatInput(input);
+        valueCell.appendChild(input);
+        const actionCell = create('td', { className: 'row-action edit-ui' });
+        actionCell.appendChild(create('button', { className: 'remove-btn', type: 'button', disabled: state.accounts.length <= 1, dataset: { removeAccount: account.id } }, '削除'));
+        row.append(nameCell, valueCell, actionCell);
+        body.appendChild(row);
+      });
+      calculateAccounts();
+    }
+    function appendDataRow(body, rowData, section, months) {
+      const row = create('tr');
+      const labelCell = create('td');
+      labelCell.appendChild(create('div', { className: 'editable-name row-label', contentEditable: 'true', dataset: { rowName: rowData.id, section } }, rowData.name));
+      row.appendChild(labelCell);
+      months.forEach(item => ENTRY_KINDS.forEach(kind => row.appendChild(createInputCell(rowData.id, item.offset, kind))));
+      const actionCell = create('td', { className: 'row-action edit-ui' });
+      if (section === 'income' || section === 'expense') actionCell.appendChild(create('button', { className: 'remove-btn', type: 'button', dataset: { removeRow: rowData.id, section } }, '削除'));
+      row.appendChild(actionCell);
+      body.appendChild(row);
+    }
+    function appendSectionRow(body, title, section, allowAdd, columnCount) {
+      const row = create('tr', { className: 'section-row' });
+      const label = appendCell(row, 'td', `【${title}】`, 'section-label');
+      if (allowAdd) label.appendChild(create('button', { className: 'section-add edit-ui', type: 'button', dataset: { addRow: section } }, '＋科目'));
+      const blank = create('td');
+      blank.colSpan = columnCount;
+      row.append(blank, create('td', { className: 'edit-ui' }));
+      body.appendChild(row);
+    }
+    function appendComputedRow(body, label, prefix, className, months) {
+      const row = create('tr', { className });
+      appendCell(row, 'td', label);
+      months.forEach(item => ENTRY_KINDS.forEach(kind => row.appendChild(createCalculatedCell(`${prefix}-${item.offset}-${kind}`))));
+      row.appendChild(create('td', { className: 'edit-ui' }));
+      body.appendChild(row);
+    }
+    function renderCashflow() {
+      const months = displayedMonths();
+      renderColumns(months);
+      renderHead(months);
+      const body = byId('cashflowBody');
+      clear(body);
+      const openingRow = create('tr');
+      appendCell(openingRow, 'td', '前月繰越高');
+      months.forEach((item, displayIndex) => ENTRY_KINDS.forEach(kind => {
+        openingRow.appendChild(displayIndex === 0 ? createInputCell('opening', item.offset, kind, 'opening') : createCalculatedCell(`opening-${item.offset}-${kind}`));
+      }));
+      openingRow.appendChild(create('td', { className: 'edit-ui' }));
+      body.appendChild(openingRow);
+      appendSectionRow(body, '経常収入', 'income', true, months.length * 2);
+      state.income.forEach(row => appendDataRow(body, row, 'income', months));
+      appendComputedRow(body, '経常収入合計', 'income-total', 'total-row', months);
+      appendSectionRow(body, '経常支出', 'expense', true, months.length * 2);
+      state.expense.forEach(row => appendDataRow(body, row, 'expense', months));
+      appendComputedRow(body, '経常支出合計', 'expense-total', 'total-row', months);
+      appendComputedRow(body, '差引経常収支', 'operating', 'balance-row', months);
+      appendSectionRow(body, '財務等', 'finance', false, months.length * 2);
+      state.finance.forEach(row => appendDataRow(body, row, 'finance', months));
+      appendComputedRow(body, '財務等収支', 'finance-total', 'total-row', months);
+      appendComputedRow(body, '翌月繰越高', 'closing', 'closing-row', months);
+      calculate();
+    }
+    function setAmount(id, value) {
+      const element = byId(id);
+      if (!element) return;
+      element.textContent = format(value);
+      element.classList.toggle('negative', value < 0);
+    }
+    function setClosingAmount(id, value) {
+      const element = byId(id);
+      if (!element) return;
+      const isShortage = value < 0;
+      element.textContent = `${isShortage ? '※' : ''}${format(value)}`;
+      element.classList.toggle('negative', isShortage);
+      element.classList.toggle('cash-shortage', isShortage);
+    }
+    function sumRows(rows, monthIndex, kind, useSign = false) {
+      return rows.reduce((sum, row) => sum + numberOf(state.values[key(row.id, monthIndex, kind)]) * (useSign ? (row.sign || 1) : 1), 0);
+    }
+    // ---- 合計・翌月繰越・資金不足表示の計算 ----
+    function calculate() {
+      let hasShortage = false;
+      const months = displayedMonths();
+      months.forEach((item, displayIndex) => ENTRY_KINDS.forEach(kind => {
+        const previousItem = months[displayIndex - 1];
+        const previousClosing = previousItem ? byId(`closing-${previousItem.offset}-${kind}`) : null;
+        const opening = displayIndex === 0 ? numberOf(state.opening[`${item.offset}-${kind}`]) : numberOf(previousClosing && previousClosing.dataset.value);
+        const income = sumRows(state.income, item.offset, kind);
+        const expense = sumRows(state.expense, item.offset, kind);
+        const operating = income - expense;
+        const finance = sumRows(state.finance, item.offset, kind, true);
+        const closing = opening + operating + finance;
+        if (displayIndex > 0) {
+          setAmount(`opening-${item.offset}-${kind}`, opening);
+          byId(`opening-${item.offset}-${kind}`).dataset.value = opening;
+        }
+        setAmount(`income-total-${item.offset}-${kind}`, income);
+        setAmount(`expense-total-${item.offset}-${kind}`, expense);
+        setAmount(`operating-${item.offset}-${kind}`, operating);
+        setAmount(`finance-total-${item.offset}-${kind}`, finance);
+        setClosingAmount(`closing-${item.offset}-${kind}`, closing);
+        byId(`closing-${item.offset}-${kind}`).dataset.value = closing;
+        hasShortage ||= closing < 0;
+      }));
+      byId('shortageLegend').hidden = !hasShortage;
+      updateCashflowMetrics();
+    }
+    // ---- 指標タイル（既存stateの値を表示用に集計） ----
+    function plannedClosingMetrics() {
+      const currentMonth = monthText(new Date());
+      const firstMonth = addMonths(currentMonth, -1);
+      let closing = numberOf(state.opening[`${monthOffset(firstMonth)}-plan`]);
+      const metrics = [];
+      for (let ahead = -1; ahead <= RULE_FUTURE_MONTH_COUNT; ahead += 1) {
+        const month = addMonths(currentMonth, ahead);
+        const offset = monthOffset(month);
+        closing += sumRows(state.income, offset, 'plan') - sumRows(state.expense, offset, 'plan') + sumRows(state.finance, offset, 'plan', true);
+        if (ahead >= 0) metrics.push({ month, closing });
+      }
+      return metrics;
+    }
+    function updateCashflowMetrics() {
+      const metrics = plannedClosingMetrics();
+      const current = metrics[0];
+      const future = metrics[RULE_FUTURE_MONTH_COUNT];
+      const shortage = metrics.find(item => item.closing < 0);
+      const currentValue = byId('currentClosingMetric');
+      const futureValue = byId('futureClosingMetric');
+      currentValue.textContent = format(current.closing);
+      futureValue.textContent = format(future.closing);
+      currentValue.classList.toggle('negative', current.closing < 0);
+      futureValue.classList.toggle('negative', future.closing < 0);
+      byId('currentClosingHint').textContent = `${monthLabel(current.month)}末`;
+      byId('futureClosingHint').textContent = `${monthLabel(future.month)}末`;
+      byId('shortageMetric').textContent = shortage ? `${Number(shortage.month.slice(5))}月に不足` : '不足なし';
+      byId('shortageTile').classList.toggle('warn', Boolean(shortage));
+      byId('shortageTile').classList.toggle('ok', !shortage);
+    }
+    function calculateAccounts() {
+      const total = state.accounts.reduce((sum, account) => sum + numberOf(account.value), 0);
+      setAmount('accountTotal', total);
+      const metric = byId('accountTotalMetric');
+      metric.textContent = format(total);
+      metric.classList.toggle('negative', total < 0);
+      byId('accountBreakdownMetric').textContent = state.accounts.map(account => `${account.name} ${format(numberOf(account.value))}円`).join(' ／ ');
+    }
+    function formatInput(element) {
+      const amount = numberOf(element.value);
+      element.value = element.value.trim() === '' ? '' : format(amount);
+      element.classList.toggle('negative', amount < 0);
+    }
+    function focusRaw(element) { element.value = rawNumber(element.value); element.classList.remove('negative'); element.select(); }
+    function renderAll() {
+      byId('startMonth').value = state.startMonth;
+      byId('sixMonthToggle').checked = state.viewMode === 'six';
+      byId('company').value = state.company;
+      byId('createdDate').value = state.createdDate;
+      renderAccounts(); renderCashflow(); renderRules(); renderStores();
+    }
+
+    // ---- CSV解析・文字コード判定・日付検証 ----
+    function parseCsv(text) {
+      const source = String(text).replace(/^\uFEFF/, '');
+      const firstLine = source.split(/\r?\n/, 1)[0] || '';
+      const candidates = [',', '\t', ';'];
+      const delimiter = candidates.reduce((best, candidate) => firstLine.split(candidate).length > firstLine.split(best).length ? candidate : best, ',');
+      const rows = [];
+      let row = [], field = '', quoted = false;
+      for (let index = 0; index < source.length; index += 1) {
+        const character = source[index];
+        if (quoted) {
+          if (character === '"' && source[index + 1] === '"') { field += '"'; index += 1; }
+          else if (character === '"') quoted = false;
+          else field += character;
+        } else if (character === '"') quoted = true;
+        else if (character === delimiter) { row.push(field); field = ''; }
+        else if (character === '\n') { row.push(field.replace(/\r$/, '')); rows.push(row); row = []; field = ''; }
+        else field += character;
+      }
+      row.push(field.replace(/\r$/, ''));
+      if (row.some(value => value !== '') || rows.length === 0) rows.push(row);
+      return rows;
+    }
+    function decodeCsvBuffer(buffer) {
+      try { return new TextDecoder('utf-8', { fatal: true }).decode(buffer); }
+      catch (_) { return new TextDecoder('shift_jis').decode(buffer); }
+    }
+    async function readCsvFile(file) { return decodeCsvBuffer(await file.arrayBuffer()); }
+    function parseDate(value) {
+      const text = String(value ?? '').trim();
+      const match = /^(\d{4})[\/-](\d{2})[\/-](\d{2})$/.exec(text) || /^(\d{4})年(\d{2})月(\d{2})日$/.exec(text);
+      if (!match) return null;
+      const year = Number(match[1]), month = Number(match[2]), day = Number(match[3]);
+      const date = new Date(year, month - 1, day);
+      if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) return null;
+      return { year, month, day, monthText: `${year}-${String(month).padStart(2, '0')}` };
+    }
+    function resolveColumn(headers, reference) {
+      if (reference === '' || reference === null || reference === undefined) return -1;
+      if (Number.isInteger(reference)) return reference >= 0 && reference < headers.length ? reference : -1;
+      const exact = headers.indexOf(String(reference));
+      if (exact >= 0) return exact;
+      const numeric = Number(reference);
+      return Number.isInteger(numeric) && numeric >= 0 && numeric < headers.length ? numeric : -1;
+    }
+    function resolvedMapping(headers, mapping) {
+      return Object.fromEntries(Object.entries(mapping || {}).map(([role, reference]) => [role, resolveColumn(headers, reference)]));
+    }
+    function mappingNames(headers, indexes) {
+      return Object.fromEntries(Object.entries(indexes).map(([role, index]) => [role, index >= 0 ? headers[index] : '']));
+    }
+    function hasColumn(index) { return Number.isInteger(index) && index >= 0; }
+    function guessedIndex(headers, words) {
+      const normalized = headers.map(header => String(header).trim().toLowerCase());
+      return normalized.findIndex(header => words.some(word => header.includes(word)));
+    }
+    function defaultIndexes(type, headers) {
+      const saved = resolvedMapping(headers, state.columnMappings[type]);
+      const words = type === 'spreadsheet'
+        ? { date: ['日付', 'date'], item: ['科目', '項目', 'item'], counterpart: ['相手'], amount: ['金額', 'amount'], income: ['入金', '収入'], expense: ['出金', '支出'] }
+        : { date: ['日付', 'date'], description: ['摘要', '内容', 'description'], deposit: ['入金', '預入', 'deposit'], withdrawal: ['出金', '引出', 'withdrawal'] };
+      Object.entries(words).forEach(([role, candidates]) => { if (saved[role] === undefined || saved[role] < 0) saved[role] = guessedIndex(headers, candidates); });
+      return saved;
+    }
+    function csvData(text) {
+      const allRows = parseCsv(text);
+      if (allRows.length < 2) throw new Error('見出し行とデータ行が必要です。');
+      return { headers: allRows[0].map(value => String(value).trim()), rows: allRows.slice(1) };
+    }
+
+    // ---- 科目解決と月別実績への合算 ----
+    function allSubjects() { return ['income', 'expense', 'finance'].flatMap(section => state[section].map(row => ({ ...row, section }))); }
+    function resolveSubject(reference, preferredSection = '') {
+      const value = String(reference ?? '').trim();
+      const subjects = allSubjects();
+      return subjects.find(subject => subject.id === value && (!preferredSection || subject.section === preferredSection))
+        || subjects.find(subject => subject.name === value && (!preferredSection || subject.section === preferredSection)) || null;
+    }
+    function ensureSubject(name, section) {
+      const trimmedName = String(name).trim();
+      let subject = resolveSubject(trimmedName, section);
+      if (subject) return subject;
+      const row = { id: `custom_${state.nextId++}`, name: trimmedName || '未設定科目' };
+      state[section].push(row);
+      return { ...row, section };
+    }
+    function addActual(subject, month, amount) {
+      const storageKey = key(subject.id, monthOffset(month), 'actual');
+      state.values[storageKey] = String(numberOf(state.values[storageKey]) + Math.abs(Number(amount) || 0));
+    }
+    function normalizedDate(date) {
+      return `${date.year}-${String(date.month).padStart(2, '0')}-${String(date.day).padStart(2, '0')}`;
+    }
+    function appendLedgerRow(date, account, subject, memo, incoming, outgoing, store = DEFAULT_STORE) {
+      state.ledgerRows.push({
+        date: normalizedDate(date), account: String(account), category: subject.name, memo: String(memo),
+        in: Math.abs(Number(incoming) || 0), out: Math.abs(Number(outgoing) || 0),
+        store: storeOptions().includes(store) ? store : DEFAULT_STORE,
+        subjectId: subject.id, section: subject.section
+      });
+    }
+    function storeOptions(storeNames = state.storeNames) { return [...storeNames, DEFAULT_STORE]; }
+    function showMessage(message, isError = false) {
+      const area = byId('messageArea');
+      area.textContent = message;
+      area.classList.toggle('error', isError);
+      area.hidden = false;
+    }
+    function unreadableMessage(lines) { return lines.length ? `\n読めなかった行：${lines.map(line => `${line}行目`).join('、')}` : ''; }
+    function ownValue(record, name) { return Object.prototype.hasOwnProperty.call(record, name) ? record[name] : undefined; }
+    function setOwnValue(record, name, value) {
+      Object.defineProperty(record, name, { value, enumerable: true, configurable: true, writable: true });
+    }
+
+    // ---- 今の表CSVの取り込み ----
+    function importSpreadsheetText(text, mapping, options = {}) {
+      const before = deepCopy(state);
+      try {
+        const parsed = csvData(text);
+        const columns = resolvedMapping(parsed.headers, mapping);
+        const singleAmount = hasColumn(columns.amount);
+        if (!hasColumn(columns.date) || !hasColumn(columns.item) || (!singleAmount && (!hasColumn(columns.income) || !hasColumn(columns.expense)))) throw new Error('日付・科目と、金額または入金・出金の列を指定してください。');
+        const unreadableRows = [];
+        let importedRows = 0, incomeTotal = 0, expenseTotal = 0;
+        parsed.rows.forEach((row, index) => {
+          if (row.every(value => String(value).trim() === '')) return;
+          const date = parseDate(row[columns.date]);
+          const sourceItemName = String(row[columns.item] ?? '').trim() || (hasColumn(columns.counterpart) ? String(row[columns.counterpart] ?? '').trim() : '');
+          const itemName = sourceItemName === '各仕入先' ? '仕入' : sourceItemName;
+          if (!date || !itemName) { unreadableRows.push(index + 2); return; }
+          if (singleAmount) {
+            const amount = numberOf(row[columns.amount]);
+            if (amount === 0) return;
+            const section = amount > 0 ? 'income' : 'expense';
+            const subject = ensureSubject(itemName, section);
+            addActual(subject, date.monthText, Math.abs(amount));
+            appendLedgerRow(date, '未指定', subject, itemName, amount > 0 ? amount : 0, amount < 0 ? Math.abs(amount) : 0);
+            if (section === 'income') incomeTotal += Math.abs(amount); else expenseTotal += Math.abs(amount);
+            importedRows += 1;
+          } else {
+            const income = Math.abs(numberOf(row[columns.income]));
+            const expense = Math.abs(numberOf(row[columns.expense]));
+            if (income) {
+              const subject = ensureSubject(itemName, 'income');
+              addActual(subject, date.monthText, income); appendLedgerRow(date, '未指定', subject, itemName, income, 0);
+              incomeTotal += income; importedRows += 1;
+            }
+            if (expense) {
+              const subject = ensureSubject(itemName, 'expense');
+              addActual(subject, date.monthText, expense); appendLedgerRow(date, '未指定', subject, itemName, 0, expense);
+              expenseTotal += expense; importedRows += 1;
+            }
+          }
+        });
+        state.columnMappings.spreadsheet = mappingNames(parsed.headers, columns);
+        save();
+        if (options.render !== false) renderAll();
+        const result = { importedRows, incomeTotal, expenseTotal, unreadableRows };
+        if (!options.silent) showMessage(`今の表から${importedRows}件を取り込みました。入金 ${format(incomeTotal)}円、出金 ${format(expenseTotal)}円${unreadableMessage(unreadableRows)}`);
+        return result;
+      } catch (error) {
+        state = before;
+        if (!options.silent) showMessage(`CSVを取り込めませんでした。${error.message} 入力内容は変更していません。`, true);
+        throw error;
+      }
+    }
+
+    // ---- 銀行明細CSVの分類と取り込み ----
+    function prepareBankRows(text, mapping) {
+      const parsed = csvData(text);
+      const columns = resolvedMapping(parsed.headers, mapping);
+      if (!hasColumn(columns.date) || !hasColumn(columns.description) || !hasColumn(columns.deposit) || !hasColumn(columns.withdrawal)) throw new Error('日付・摘要・入金・出金の列を指定してください。');
+      const unreadableRows = [], entries = [];
+      parsed.rows.forEach((row, index) => {
+        if (row.every(value => String(value).trim() === '')) return;
+        const date = parseDate(row[columns.date]);
+        const description = String(row[columns.description] ?? '').trim();
+        if (!date || !description) { unreadableRows.push(index + 2); return; }
+        const deposit = Math.abs(numberOf(row[columns.deposit]));
+        const withdrawal = Math.abs(numberOf(row[columns.withdrawal]));
+        if (deposit) entries.push({ date, description, amount: deposit, direction: 'deposit', sourceLine: index + 2 });
+        if (withdrawal) entries.push({ date, description, amount: withdrawal, direction: 'withdrawal', sourceLine: index + 2 });
+      });
+      return { parsed, columns, entries, unreadableRows };
+    }
+    function classificationFor(description, supplied, suppliedStores = {}) {
+      const suppliedValue = supplied ? ownValue(supplied, description) : undefined;
+      const suppliedCategory = isRecord(suppliedValue) ? (suppliedValue.category ?? suppliedValue.subject) : suppliedValue;
+      const suppliedStore = isRecord(suppliedValue) ? suppliedValue.store : ownValue(suppliedStores, description);
+      const learnedValue = ownValue(state.bankLearning, description);
+      const learnedStore = ownValue(state.bankStoreLearning, description);
+      const reference = suppliedCategory ?? learnedValue;
+      const subject = resolveSubject(reference);
+      const options = storeOptions();
+      const store = options.includes(suppliedStore) ? suppliedStore : (options.includes(learnedStore) ? learnedStore : DEFAULT_STORE);
+      return { subject, store, automatic: suppliedCategory === undefined && Boolean(subject && learnedValue) };
+    }
+    function importBankText(text, mapping, classifications = {}, accountId = '', options = {}) {
+      const before = deepCopy(state);
+      try {
+        if (accountId && !state.accounts.some(account => account.id === accountId)) throw new Error('指定された口座が見つかりません。');
+        const prepared = prepareBankRows(text, mapping);
+        const descriptions = [...new Set(prepared.entries.map(entry => entry.description))];
+        const resolved = Object.create(null), resolvedStores = Object.create(null);
+        const account = state.accounts.find(item => item.id === accountId);
+        const accountName = account ? account.name : '未指定';
+        let automaticDescriptions = 0;
+        descriptions.forEach(description => {
+          const classification = classificationFor(description, classifications, options.storeClassifications);
+          if (!classification.subject) throw new Error(`摘要「${description}」の科目が指定されていません。`);
+          resolved[description] = classification.subject;
+          resolvedStores[description] = classification.store;
+          if (classification.automatic) automaticDescriptions += 1;
+        });
+        let depositTotal = 0, withdrawalTotal = 0;
+        prepared.entries.forEach(entry => {
+          const subject = resolved[entry.description];
+          addActual(subject, entry.date.monthText, entry.amount);
+          appendLedgerRow(entry.date, accountName, subject, entry.description,
+            entry.direction === 'deposit' ? entry.amount : 0, entry.direction === 'withdrawal' ? entry.amount : 0,
+            resolvedStores[entry.description]);
+          if (entry.direction === 'deposit') depositTotal += entry.amount;
+          else withdrawalTotal += entry.amount;
+        });
+        descriptions.forEach(description => {
+          setOwnValue(state.bankLearning, description, resolved[description].id);
+          setOwnValue(state.bankStoreLearning, description, resolvedStores[description]);
+        });
+        state.columnMappings.bank = mappingNames(prepared.parsed.headers, prepared.columns);
+        save();
+        if (options.render !== false) renderAll();
+        const result = {
+          importedRows: prepared.entries.length, depositTotal, withdrawalTotal,
+          unreadableRows: prepared.unreadableRows, automaticDescriptions, descriptionCount: descriptions.length,
+          automaticRate: descriptions.length ? automaticDescriptions / descriptions.length : 1
+        };
+        if (!options.silent) showMessage(`銀行明細から${prepared.entries.length}件を取り込みました。入金 ${format(depositTotal)}円、出金 ${format(withdrawalTotal)}円${unreadableMessage(prepared.unreadableRows)}`);
+        return result;
+      } catch (error) {
+        state = before;
+        if (!options.silent) showMessage(`銀行明細を取り込めませんでした。${error.message} 入力内容は変更していません。`, true);
+        throw error;
+      }
+    }
+
+    // ---- 売上JSONの検証と現金売上への置き換え ----
+    function validSalesData(data) {
+      return isRecord(data) && data.format === 'freesia-sales' && data.version === 1 && Array.isArray(data.rows)
+        && data.rows.every(row => isRecord(row) && /^\d{4}-\d{2}-\d{2}$/.test(row.date) && parseDate(row.date)
+          && typeof row.store === 'string' && typeof row.sales === 'number' && Number.isFinite(row.sales));
+    }
+    function importSalesText(text, options = {}) {
+      const before = deepCopy(state);
+      try {
+        const data = JSON.parse(text);
+        if (!validSalesData(data)) throw new Error('freesia-sales v1の形式ではありません。');
+        const grouped = new Map();
+        data.rows.forEach(row => {
+          const month = row.date.slice(0, 7);
+          const current = grouped.get(month) || { count: 0, total: 0 };
+          current.count += 1; current.total += row.sales; grouped.set(month, current);
+        });
+        const summary = [...grouped.entries()].map(([month, item]) => `${Number(month.slice(5))}月分 ${item.count}件・合計${format(item.total)}円`).join('\n');
+        if (options.confirm !== false && !confirm(`${summary}\nを取り込みます。現金売上の実績を置き換えてよろしいですか？`)) return { cancelled: true, months: [] };
+        grouped.forEach((item, month) => { state.values[key('cash_sales', monthOffset(month), 'actual')] = String(item.total); });
+        save();
+        if (options.render !== false) renderAll();
+        const result = { cancelled: false, months: [...grouped.entries()].map(([month, item]) => ({ month, ...item })) };
+        if (!options.silent) showMessage(`${summary}\nを現金売上の実績へ取り込みました。`);
+        return result;
+      } catch (error) {
+        state = before;
+        if (!options.silent) showMessage(`売上データを取り込めませんでした。${error.message} 入力内容は変更していません。`, true);
+        throw error;
+      }
+    }
+
+    // ---- 08 支払期日管理JSONの検証・分類・予定セルへの置き換え ----
+    function validPaymentSourceRow(row) {
+      if (!isRecord(row) || !/^\d{4}-\d{2}-\d{2}$/.test(row.date)) return false;
+      const parsed = parseDate(row.date);
+      const roundTrip = parsed && `${parsed.year}-${String(parsed.month).padStart(2, '0')}-${String(parsed.day).padStart(2, '0')}`;
+      return roundTrip === row.date && typeof row.payee === 'string'
+        && typeof row.amount === 'number' && Number.isFinite(row.amount)
+        && typeof row.category === 'string' && typeof row.fixed === 'boolean';
+    }
+    function parsePaymentsData(text) {
+      let data;
+      try { data = JSON.parse(text); }
+      catch (_) { throw new Error('JSONとして読み取れません。'); }
+      if (!isRecord(data) || data.format !== 'freesia-payments' || ![1, 2].includes(data.version)
+        || !Array.isArray(data.rows)) {
+        throw new Error('freesia-payments v1/v2の形式ではありません。日付・支払先・金額・カテゴリ・固定区分を確認してください。');
+      }
+      if (data.version === 2) {
+        const missingIndex = data.rows.findIndex(row => typeof row.masterId !== 'string' || row.masterId.trim() === '');
+        if (missingIndex >= 0) {
+          throw new Error(`${missingIndex + 1}行目: masterIdがありません。支払期日管理ツールから書き出し直してください`);
+        }
+      }
+      if (!data.rows.every(validPaymentSourceRow)) {
+        throw new Error('freesia-payments v1/v2の形式ではありません。日付・支払先・金額・カテゴリ・固定区分を確認してください。');
+      }
+      return data;
+    }
+    function paymentSubjects() {
+      return ['expense', 'finance'].flatMap(section => state[section].map(row => ({ ...row, section })));
+    }
+    function paymentSubject(reference) {
+      return paymentSubjects().find(subject => subject.id === reference || subject.name === reference) || null;
+    }
+    function paymentClassification(category, supplied = {}) {
+      const suppliedReference = ownValue(supplied, category);
+      const learnedReference = ownValue(state.paymentCategoryLearning, category);
+      return paymentSubjects().find(subject => subject.name === category)
+        || paymentSubject(suppliedReference) || paymentSubject(learnedReference);
+    }
+    // v2はツール間で共有する安定IDを使い、masterIdを持たないv1保存行だけ従来キーを保つ。
+    function paymentIdentity(row) {
+      return typeof row.masterId === 'string' && row.masterId.trim() !== ''
+        ? `${row.date}\u0000${row.masterId}`
+        : `${row.date}\u0000${row.payee}\u0000${row.amount}`;
+    }
+    function paymentTotals(rows) {
+      const totals = new Map();
+      rows.forEach(row => {
+        const subject = paymentSubject(row.subjectId);
+        if (!subject) return;
+        const storageKey = key(subject.id, monthOffset(row.date.slice(0, 7)), 'plan');
+        totals.set(storageKey, (totals.get(storageKey) || 0) + row.amount);
+      });
+      return totals;
+    }
+    function importPaymentsText(text, classifications = {}, options = {}) {
+      const before = deepCopy(state);
+      try {
+        const data = parsePaymentsData(text);
+        if (!isRecord(classifications)) throw new Error('科目の分類指定が不正です。');
+        const accepted = [], unresolved = [];
+        data.rows.forEach(row => {
+          const subject = paymentClassification(row.category, classifications);
+          if (!subject) { unresolved.push(row); return; }
+          accepted.push({ ...row, subjectId: subject.id, section: subject.section });
+        });
+
+        const previousTotals = paymentTotals(state.paymentsRows);
+        const merged = new Map(state.paymentsRows.map(row => [paymentIdentity(row), row]));
+        accepted.forEach(row => merged.set(paymentIdentity(row), row));
+        const nextRows = [...merged.values()];
+        const nextTotals = paymentTotals(nextRows);
+        const affectedKeys = new Set([...previousTotals.keys(), ...nextTotals.keys()]);
+        const manualCells = [...nextTotals.keys()].filter(storageKey => {
+          const current = state.values[storageKey];
+          const wasManaged = previousTotals.has(storageKey) && numberOf(current) === previousTotals.get(storageKey);
+          return String(current ?? '').trim() !== '' && !wasManaged;
+        });
+        if (manualCells.length && options.confirm !== false
+          && !confirm(`既に手入力がある予定セルが${manualCells.length}個あります。支払予定の合算値で置き換えますか？`)) {
+          return { cancelled: true, importedRows: 0, unresolvedRows: unresolved.length };
+        }
+
+        state.paymentsRows = nextRows;
+        accepted.forEach(row => { setOwnValue(state.paymentCategoryLearning, row.category, row.subjectId); });
+        affectedKeys.forEach(storageKey => {
+          state.values[storageKey] = nextTotals.has(storageKey) ? String(nextTotals.get(storageKey)) : '';
+        });
+        save();
+        if (options.render !== false) renderAll();
+        const result = {
+          cancelled: false, importedRows: accepted.length, unresolvedRows: unresolved.length,
+          paymentRowCount: state.paymentsRows.length,
+          months: [...nextTotals.entries()].map(([storageKey, total]) => ({ storageKey, total }))
+        };
+        if (!options.silent) {
+          const unresolvedText = unresolved.length ? ` 未対応${unresolved.length}件（取り込んでいません）` : '';
+          showMessage(`支払予定${accepted.length}件を予定へ取り込みました。${unresolvedText}`);
+        }
+        return result;
+      } catch (error) {
+        state = before;
+        if (!options.silent) showMessage(`支払予定を取り込めませんでした。${error.message} 入力内容は変更していません。`, true);
+        throw error;
+      }
+    }
+
+    // ---- 共通ダイアログ ----
+    function closeModal() { byId('modal').hidden = true; clear(byId('modalContent')); clear(byId('modalActions')); }
+    function openModal(title, contentNodes, actions) {
+      byId('modalTitle').textContent = title;
+      const content = byId('modalContent'); clear(content); contentNodes.forEach(node => content.appendChild(node));
+      const actionArea = byId('modalActions'); clear(actionArea);
+      actions.forEach(action => {
+        const button = create('button', { type: 'button' }, action.label);
+        button.addEventListener('click', action.run); actionArea.appendChild(button);
+      });
+      byId('modal').hidden = false;
+    }
+    function makeSelect(headers, selectedIndex, allowUnused) {
+      const select = create('select');
+      if (allowUnused) select.appendChild(create('option', { value: '-1' }, '（使わない）'));
+      headers.forEach((header, index) => select.appendChild(create('option', { value: String(index), selected: index === selectedIndex }, header || `列${index + 1}`)));
+      if (!allowUnused && selectedIndex < 0 && select.options.length) select.selectedIndex = 0;
+      return select;
+    }
+    function previewNode(parsed) {
+      const wrap = create('div', { className: 'preview-wrap' });
+      const table = create('table', { className: 'preview-table' });
+      const head = create('thead'), headRow = create('tr');
+      parsed.headers.forEach(header => appendCell(headRow, 'th', header)); head.appendChild(headRow);
+      const body = create('tbody');
+      parsed.rows.slice(0, 5).forEach(sourceRow => {
+        const row = create('tr');
+        parsed.headers.forEach((_, index) => appendCell(row, 'td', sourceRow[index] ?? '')); body.appendChild(row);
+      });
+      table.append(head, body); wrap.appendChild(table); return wrap;
+    }
+    function openMappingDialog(type, text, onMapped) {
+      let parsed;
+      try { parsed = csvData(text); }
+      catch (error) { showMessage(`CSVを開けませんでした。${error.message}`, true); return; }
+      const isSpreadsheet = type === 'spreadsheet';
+      const fields = isSpreadsheet
+        ? [['date', '日付', false], ['item', '科目', false], ['counterpart', '相手（科目が空の時）', true], ['amount', '金額（正負で収支）', true], ['income', '入金', true], ['expense', '出金', true]]
+        : [['date', '日付', false], ['description', '摘要', false], ['deposit', '入金', false], ['withdrawal', '出金', false]];
+      const guesses = defaultIndexes(type, parsed.headers);
+      const grid = create('div', { className: 'mapping-grid' }), selects = {};
+      fields.forEach(([role, label, allowUnused]) => {
+        grid.appendChild(create('label', {}, label));
+        selects[role] = makeSelect(parsed.headers, guesses[role], allowUnused); grid.appendChild(selects[role]);
+      });
+      const hint = create('p', {}, isSpreadsheet ? '科目が空の行は「相手」を科目として取り込みます。金額1列を使う場合は、入金・出金を「使わない」にしてください。入出金2列を使う場合は金額を「使わない」にします。' : '先頭5行を確認し、各列を指定してください。');
+      openModal(isSpreadsheet ? '今の表：列の対応づけ' : '銀行明細：列の対応づけ', [hint, grid, previewNode(parsed)], [
+        { label: 'キャンセル', run: closeModal },
+        { label: '次へ', run: () => {
+          const indexes = Object.fromEntries(Object.entries(selects).map(([role, select]) => [role, Number(select.value)]));
+          const valid = isSpreadsheet
+            ? indexes.date >= 0 && indexes.item >= 0 && (indexes.amount >= 0 || (indexes.income >= 0 && indexes.expense >= 0))
+            : indexes.date >= 0 && indexes.description >= 0 && indexes.deposit >= 0 && indexes.withdrawal >= 0;
+          if (!valid) { alert('必要な列をすべて指定してください。'); return; }
+          closeModal(); onMapped(mappingNames(parsed.headers, indexes));
+        } }
+      ]);
+    }
+    function subjectSelect(selectedId = '') {
+      const select = create('select');
+      select.appendChild(create('option', { value: '' }, '（科目を選択）'));
+      [['income', '収入'], ['expense', '支出'], ['finance', '財務等']].forEach(([section, label]) => {
+        const group = create('optgroup', { label });
+        state[section].forEach(row => group.appendChild(create('option', { value: row.id, selected: row.id === selectedId }, row.name)));
+        select.appendChild(group);
+      });
+      return select;
+    }
+    function paymentSubjectSelect(selectedId = '') {
+      const select = create('select');
+      select.appendChild(create('option', { value: '' }, '（未対応のまま）'));
+      [['expense', '支出'], ['finance', '財務等']].forEach(([section, label]) => {
+        const group = create('optgroup', { label });
+        state[section].forEach(row => group.appendChild(create('option', { value: row.id, selected: row.id === selectedId }, row.name)));
+        select.appendChild(group);
+      });
+      return select;
+    }
+    function openPaymentClassification(text) {
+      let data;
+      try { data = parsePaymentsData(text); }
+      catch (error) { showMessage(`支払予定を開けませんでした。${error.message} 入力内容は変更していません。`, true); return; }
+      const categories = [...new Set(data.rows.map(row => row.category))];
+      const unresolved = categories.filter(category => !paymentClassification(category));
+      if (!unresolved.length) {
+        try { importPaymentsText(text); } catch (_) { /* 本文上部へ日本語で表示済み。 */ }
+        return;
+      }
+      const table = create('table', { className: 'classification-table' });
+      const head = create('thead'), headRow = create('tr');
+      ['カテゴリ', '科目'].forEach(label => appendCell(headRow, 'th', label)); head.appendChild(headRow);
+      const body = create('tbody'), selects = Object.create(null);
+      unresolved.forEach(category => {
+        const row = create('tr'); appendCell(row, 'td', category);
+        const selectCell = create('td'); selects[category] = paymentSubjectSelect();
+        selectCell.appendChild(selects[category]); row.appendChild(selectCell); body.appendChild(row);
+      });
+      table.append(head, body);
+      openModal('支払予定：カテゴリの分類', [
+        create('p', {}, 'カテゴリごとに支出・財務等の科目を割り当ててください。割り当ては次回から自動で使われます。未対応の行は取り込みません。'),
+        table
+      ], [
+        { label: 'キャンセル', run: closeModal },
+        { label: '確定して取り込む', run: () => {
+          const classifications = Object.fromEntries(Object.entries(selects).map(([category, select]) => [category, select.value]));
+          closeModal();
+          try { importPaymentsText(text, classifications); } catch (_) { /* 本文上部へ日本語で表示済み。 */ }
+        } }
+      ]);
+    }
+    function storeSelect(selectedStore = DEFAULT_STORE) {
+      const select = create('select');
+      storeOptions().forEach(store => select.appendChild(create('option', { value: store, selected: store === selectedStore }, store)));
+      return select;
+    }
+    function openBankClassification(text, mapping, accountId) {
+      let prepared;
+      try { prepared = prepareBankRows(text, mapping); }
+      catch (error) { showMessage(`銀行明細を開けませんでした。${error.message}`, true); return; }
+      const descriptions = [...new Set(prepared.entries.map(entry => entry.description))];
+      const table = create('table', { className: 'classification-table' });
+      const head = create('thead'), headRow = create('tr');
+      ['摘要', '科目', '店', '判定'].forEach(label => appendCell(headRow, 'th', label)); head.appendChild(headRow);
+      const body = create('tbody'), selects = Object.create(null), storeSelects = Object.create(null);
+      descriptions.forEach(description => {
+        const row = create('tr'); appendCell(row, 'td', description);
+        const learned = resolveSubject(ownValue(state.bankLearning, description));
+        const selectCell = create('td'); selects[description] = subjectSelect(learned ? learned.id : ''); selectCell.appendChild(selects[description]); row.appendChild(selectCell);
+        const learnedStore = ownValue(state.bankStoreLearning, description);
+        const storeCell = create('td'); storeSelects[description] = storeSelect(learnedStore); storeCell.appendChild(storeSelects[description]); row.appendChild(storeCell);
+        appendCell(row, 'td', learned ? '自動' : '手動', learned ? 'auto-mark' : ''); body.appendChild(row);
+      });
+      table.append(head, body);
+      const nodes = [create('p', {}, '摘要ごとに科目を割り当ててください。次回から完全一致した摘要は自動で入ります。'), table];
+      if (prepared.unreadableRows.length) nodes.push(create('p', { className: 'message error' }, `読めなかった行：${prepared.unreadableRows.map(line => `${line}行目`).join('、')}（取り込み対象外）`));
+      openModal('銀行明細：摘要の分類', nodes, [
+        { label: 'キャンセル', run: closeModal },
+        { label: '確定して取り込む', run: () => {
+          const classifications = Object.fromEntries(Object.entries(selects).map(([description, select]) => [description, {
+            category: select.value, store: storeSelects[description].value
+          }]));
+          if (Object.values(classifications).some(value => !value.category)) { alert('すべての摘要に科目を指定してください。'); return; }
+          closeModal();
+          try { importBankText(text, mapping, classifications, accountId); } catch (_) { /* 本文上部へ日本語で表示済み。 */ }
+        } }
+      ]);
+    }
+    function openAccountPicker() {
+      const label = create('label', {}, '取り込む口座'), select = create('select');
+      state.accounts.forEach(account => select.appendChild(create('option', { value: account.id }, account.name)));
+      openModal('銀行明細：口座を選択', [label, select], [
+        { label: 'キャンセル', run: closeModal },
+        { label: 'CSVを選ぶ', run: () => { selectedBankAccountId = select.value; closeModal(); byId('bankFileInput').click(); } }
+      ]);
+    }
+
+    // ---- 店名設定と、学習済み・取込済みデータの追従 ----
+    function validStoreNames(names) {
+      return Array.isArray(names) && names.length >= 1
+        && names.every(name => typeof name === 'string' && name.trim() === name && name !== '' && name !== DEFAULT_STORE)
+        && new Set(names).size === names.length;
+    }
+    function replaceStoreReferences(replacements, remainingNames) {
+      Object.keys(state.bankStoreLearning).forEach(description => {
+        const current = state.bankStoreLearning[description];
+        if (Object.prototype.hasOwnProperty.call(replacements, current)) state.bankStoreLearning[description] = replacements[current];
+        else if (current !== DEFAULT_STORE && !remainingNames.includes(current)) state.bankStoreLearning[description] = DEFAULT_STORE;
+      });
+      state.ledgerRows.forEach(row => {
+        if (Object.prototype.hasOwnProperty.call(replacements, row.store)) row.store = replacements[row.store];
+        else if (row.store !== DEFAULT_STORE && !remainingNames.includes(row.store)) row.store = DEFAULT_STORE;
+      });
+    }
+    function updateStoreNames(names, replacements = {}) {
+      const normalized = Array.isArray(names) ? names.map(name => String(name).trim()) : names;
+      if (!validStoreNames(normalized)) throw new Error('店名は空欄・重複・「共通」を避け、1店以上指定してください。');
+      replaceStoreReferences(replacements, normalized);
+      state.storeNames = [...normalized];
+      save(); renderStores();
+      return [...state.storeNames];
+    }
+    function renameStore(oldName, newName) {
+      const trimmed = String(newName).trim();
+      const names = state.storeNames.map(name => name === oldName ? trimmed : name);
+      return updateStoreNames(names, { [oldName]: trimmed });
+    }
+    function removeStore(name) {
+      if (state.storeNames.length <= 1) throw new Error('店は最低1店必要です。');
+      return updateStoreNames(state.storeNames.filter(store => store !== name));
+    }
+    function renderStores() {
+      const body = byId('storeBody'); clear(body);
+      state.storeNames.forEach(name => {
+        const row = create('tr'); appendCell(row, 'td', name);
+        const actions = create('td');
+        actions.append(
+          create('button', { type: 'button', dataset: { editStore: name } }, '名称変更'),
+          create('button', { type: 'button', dataset: { removeStore: name }, disabled: state.storeNames.length <= 1 }, '削除')
+        );
+        row.appendChild(actions); body.appendChild(row);
+      });
+      const commonRow = create('tr'); appendCell(commonRow, 'td', `${DEFAULT_STORE}（固定）`); appendCell(commonRow, 'td', '変更不可'); body.appendChild(commonRow);
+    }
+    function openStoreEditor(oldName = '') {
+      const form = create('div', { className: 'rule-form' });
+      const name = create('input', { type: 'text', value: oldName });
+      form.append(create('label', {}, '店名'), name);
+      openModal(oldName ? '店名を変更' : '店を追加', [form], [
+        { label: 'キャンセル', run: closeModal },
+        { label: '保存', run: () => {
+          try {
+            if (oldName) renameStore(oldName, name.value);
+            else updateStoreNames([...state.storeNames, name.value]);
+            closeModal();
+          } catch (error) { alert(error.message); }
+        } }
+      ]);
+    }
+
+    // ---- 収入・支出・財務等の繰り返しルール管理と予定反映 ----
+    function validRule(rule) {
+      return isRecord(rule) && typeof rule.id === 'string' && typeof rule.name === 'string'
+        && (rule.section === 'income' || rule.section === 'expense' || rule.section === 'finance') && typeof rule.rowId === 'string'
+        && Number.isInteger(rule.day) && rule.day >= 1 && rule.day <= 31 && typeof rule.amount === 'number' && Number.isFinite(rule.amount) && rule.amount >= 0;
+    }
+    function renderRules() {
+      const body = byId('ruleBody'); clear(body);
+      if (!state.recurringRules.length) {
+        const row = create('tr'), cell = appendCell(row, 'td', '登録されたルールはありません。', 'empty-note'); cell.colSpan = 6; body.appendChild(row); return;
+      }
+      state.recurringRules.forEach(rule => {
+        const subject = resolveSubject(rule.rowId, rule.section), row = create('tr');
+        const sectionLabel = { income: '収入', expense: '支出', finance: '財務等' }[rule.section];
+        appendCell(row, 'td', rule.name); appendCell(row, 'td', sectionLabel);
+        appendCell(row, 'td', subject ? subject.name : '削除済み科目'); appendCell(row, 'td', `${rule.day}日`); appendCell(row, 'td', `${format(rule.amount)}円`, 'amount');
+        const actions = create('td');
+        actions.append(create('button', { type: 'button', dataset: { editRule: rule.id } }, '編集'), create('button', { type: 'button', dataset: { removeRule: rule.id } }, '削除'));
+        row.appendChild(actions); body.appendChild(row);
+      });
+    }
+    function openRuleEditor(rule = null) {
+      const form = create('div', { className: 'rule-form' });
+      const name = create('input', { type: 'text', value: rule ? rule.name : '' });
+      const section = create('select');
+      section.append(
+        create('option', { value: 'income', selected: !rule || rule.section === 'income' }, '収入'),
+        create('option', { value: 'expense', selected: rule && rule.section === 'expense' }, '支出'),
+        create('option', { value: 'finance', selected: rule && rule.section === 'finance' }, '財務等')
+      );
+      const subject = create('select');
+      const day = create('input', { type: 'number', min: '1', max: '31', value: rule ? String(rule.day) : '1' });
+      const amount = create('input', { type: 'text', inputMode: 'decimal', value: rule ? String(rule.amount) : '' });
+      function fillSubjects() {
+        const previous = subject.value || (rule ? rule.rowId : ''); clear(subject);
+        const destination = section.value === 'finance' ? create('optgroup', { label: '【財務等】' }) : subject;
+        state[section.value].forEach(row => destination.appendChild(create('option', { value: row.id, selected: row.id === previous }, row.name)));
+        if (destination !== subject) subject.appendChild(destination);
+      }
+      section.addEventListener('change', fillSubjects); fillSubjects();
+      [['名前', name], ['区分', section], ['科目', subject], ['毎月の日（1〜31）', day], ['金額', amount]].forEach(([label, control]) => { form.append(create('label', {}, label), control); });
+      openModal(rule ? '繰り返しルールを編集' : '繰り返しルールを追加', [form], [
+        { label: 'キャンセル', run: closeModal },
+        { label: '保存', run: () => {
+          const candidate = { id: rule ? rule.id : `rule_${state.nextId++}`, name: name.value.trim(), section: section.value, rowId: subject.value, day: Number(day.value), amount: Math.abs(numberOf(amount.value)) };
+          if (!candidate.name || !candidate.rowId || !validRule(candidate)) { alert('名前・区分・科目・毎月の日・金額を正しく入力してください。'); return; }
+          if (rule) state.recurringRules = state.recurringRules.map(item => item.id === rule.id ? candidate : item); else state.recurringRules.push(candidate);
+          save(); renderRules(); closeModal();
+        } }
+      ]);
+    }
+    function applyRecurringRules(options = {}) {
+      const start = monthText(new Date()), targets = new Map();
+      state.recurringRules.forEach(rule => {
+        if (!resolveSubject(rule.rowId, rule.section)) return;
+        for (let ahead = 0; ahead <= RULE_FUTURE_MONTH_COUNT; ahead += 1) {
+          const storageKey = key(rule.rowId, monthOffset(addMonths(start, ahead)), 'plan');
+          targets.set(storageKey, (targets.get(storageKey) || 0) + rule.amount);
+        }
+      });
+      const overwritten = [...targets.keys()].filter(storageKey => String(state.values[storageKey] ?? '').trim() !== '');
+      if (overwritten.length && options.confirm !== false && !confirm(`既に値がある予定セルが${overwritten.length}個あります。繰り返しルールの合算値で上書きしますか？`)) return { cancelled: true, updatedCells: 0 };
+      targets.forEach((amountValue, storageKey) => { state.values[storageKey] = String(amountValue); });
+      save(); if (options.render !== false) renderAll();
+      if (!options.silent) showMessage(`繰り返しルールを当月から3か月先まで、${targets.size}個の予定セルへ反映しました。`);
+      return { cancelled: false, updatedCells: targets.size, overwrittenCells: overwritten.length };
+    }
+
+    // ---- 保存データの型検証とバックアップ ----
+    function isRecord(value) { return value !== null && typeof value === 'object' && !Array.isArray(value); }
+    function isNamedRow(row) { return isRecord(row) && typeof row.id === 'string' && typeof row.name === 'string'; }
+    function isValidMonth(value) {
+      const match = /^(\d{4})-(\d{2})$/.exec(value);
+      return Boolean(match) && Number(match[1]) >= 1990 && Number(match[1]) <= 2100 && Number(match[2]) >= 1 && Number(match[2]) <= 12;
+    }
+    function isAmount(value) {
+      return value === '' || ((typeof value === 'string' || typeof value === 'number') && Number.isFinite(Number(value)));
+    }
+    function isValidMonthOffset(offset, baseMonth) {
+      if (!Number.isInteger(offset) || !isValidMonth(baseMonth)) return false;
+      return isValidMonth(addMonths(baseMonth, offset));
+    }
+    function isValidValueKey(storageKey, baseMonth) {
+      const match = /^([^|]+)\|(-?\d+)\|(plan|actual)$/.exec(storageKey);
+      return Boolean(match) && isValidMonthOffset(Number(match[2]), baseMonth);
+    }
+    function isValidOpeningKey(storageKey, baseMonth) {
+      const match = /^(-?\d+)-(plan|actual)$/.exec(storageKey);
+      return Boolean(match) && isValidMonthOffset(Number(match[1]), baseMonth);
+    }
+    function sanitizeAmountRecord(value, keyValidator, baseMonth) {
+      if (!isRecord(value)) return value;
+      return Object.fromEntries(Object.entries(value).filter(([storageKey, amount]) => keyValidator(storageKey, baseMonth) && isAmount(amount)));
+    }
+    function isStringRecord(value) { return isRecord(value) && Object.values(value).every(item => typeof item === 'string'); }
+    function isColumnMapping(value) {
+      return isRecord(value) && Object.values(value).every(item => typeof item === 'string' || (Number.isInteger(item) && item >= -1));
+    }
+    function isStoreLearning(value, names) { return isRecord(value) && Object.values(value).every(store => storeOptions(names).includes(store)); }
+    function isPaymentRow(row) {
+      return validPaymentSourceRow(row) && typeof row.subjectId === 'string'
+        && (row.section === 'expense' || row.section === 'finance')
+        && (row.masterId === undefined || (typeof row.masterId === 'string' && row.masterId.trim() !== ''));
+    }
+    function isLedgerRow(row, names) {
+      return isRecord(row) && /^\d{4}-\d{2}-\d{2}$/.test(row.date) && Boolean(parseDate(row.date))
+        && typeof row.account === 'string' && typeof row.category === 'string' && typeof row.memo === 'string'
+        && typeof row.in === 'number' && Number.isFinite(row.in) && row.in >= 0
+        && typeof row.out === 'number' && Number.isFinite(row.out) && row.out >= 0 && storeOptions(names).includes(row.store)
+        && (row.subjectId === undefined || typeof row.subjectId === 'string')
+        && (row.section === undefined || ['income', 'expense', 'finance'].includes(row.section));
+    }
+    function isValidStateData(data) {
+      if (!isRecord(data)) return false;
+      const storeNames = data.storeNames === undefined ? DEFAULT_STORE_NAMES : data.storeNames;
+      if (!validStoreNames(storeNames)) return false;
+      const validAccounts = Array.isArray(data.accounts) && data.accounts.length > 0 && data.accounts.every(account => isNamedRow(account) && isAmount(account.value));
+      const validRows = ['income', 'expense', 'finance'].every(section => Array.isArray(data[section]) && data[section].every(isNamedRow));
+      const validFinance = Array.isArray(data.finance) && data.finance.every(row => row.sign === 1 || row.sign === -1);
+      const baseMonth = data.dataBaseMonth || data.startMonth;
+      const validValues = isRecord(data.values) && Object.entries(data.values).every(([storageKey, amount]) => isValidValueKey(storageKey, baseMonth) && isAmount(amount));
+      const validOpening = isRecord(data.opening) && Object.entries(data.opening).every(([storageKey, amount]) => isValidOpeningKey(storageKey, baseMonth) && isAmount(amount));
+      const validOptional = (data.columnMappings === undefined || (isRecord(data.columnMappings) && isColumnMapping(data.columnMappings.spreadsheet) && isColumnMapping(data.columnMappings.bank)))
+        && (data.bankLearning === undefined || isStringRecord(data.bankLearning))
+        && (data.bankStoreLearning === undefined || isStoreLearning(data.bankStoreLearning, storeNames))
+        && (data.paymentsRows === undefined || (Array.isArray(data.paymentsRows) && data.paymentsRows.every(isPaymentRow)))
+        && (data.paymentCategoryLearning === undefined || isStringRecord(data.paymentCategoryLearning))
+        && (data.ledgerRows === undefined || (Array.isArray(data.ledgerRows) && data.ledgerRows.every(row => isLedgerRow(row, storeNames))))
+        && (data.recurringRules === undefined || (Array.isArray(data.recurringRules) && data.recurringRules.every(validRule)))
+        && (data.viewMode === undefined || data.viewMode === 'rolling5' || data.viewMode === 'six');
+      return isValidMonth(data.startMonth)
+        && (data.dataBaseMonth === undefined || isValidMonth(data.dataBaseMonth))
+        && typeof data.company === 'string' && typeof data.createdDate === 'string'
+        && Number.isInteger(data.nextId) && validAccounts && validRows && validFinance && validValues && validOpening && validOptional;
+    }
+    function isValidBackup(backup) { return isRecord(backup) && backup.kind === BACKUP_KIND && backup.version === BACKUP_VERSION && isValidStateData(backup.data); }
+    function backupText() { return JSON.stringify({ kind: BACKUP_KIND, version: BACKUP_VERSION, data: state }, null, 2); }
+    function ledgerSection(row) {
+      if (['income', 'expense', 'finance'].includes(row.section)) return row.section;
+      const subject = resolveSubject(row.subjectId || row.category);
+      return subject ? subject.section : (row.in > 0 ? 'income' : 'expense');
+    }
+    function ledgerText() {
+      const rows = state.ledgerRows.map(row => ({
+        date: row.date, account: row.account, category: row.category, memo: row.memo,
+        in: row.in, out: row.out, store: row.store, section: ledgerSection(row)
+      }));
+      return JSON.stringify({ format: 'freesia-ledger', version: 2, rows }, null, 2);
+    }
+    function exportLedger() {
+      const file = new Blob([ledgerText()], { type: 'application/json' });
+      const downloadUrl = URL.createObjectURL(file);
+      const link = create('a', { href: downloadUrl, download: `PL用入出金明細_${localDateText()}.json` });
+      document.body.appendChild(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(downloadUrl), 0);
+      showMessage(`PL用の入出金明細を${state.ledgerRows.length}件書き出しました。`);
+    }
+    function exportBackup() {
+      const file = new Blob([backupText()], { type: 'application/json' });
+      const downloadUrl = URL.createObjectURL(file);
+      const link = create('a', { href: downloadUrl, download: `資金繰り表バックアップ_${localDateText()}.json` });
+      document.body.appendChild(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(downloadUrl), 0);
+    }
+    function importBackupFile(file) {
+      const reader = new FileReader();
+      reader.addEventListener('load', () => {
+        try {
+          const backup = JSON.parse(reader.result);
+          if (!isValidBackup(backup)) throw new Error('invalid backup');
+          state = normalizeLoadedState(backup.data); save(); renderAll(); showMessage('バックアップを読み込みました。');
+        } catch (_) { showMessage('このファイルは資金繰り表のバックアップではないようです。入力内容は変更していません。', true); }
+      });
+      reader.addEventListener('error', () => showMessage('ファイルを読み込めませんでした。入力内容は変更していません。', true));
+      reader.readAsText(file);
+    }
+
+    // ---- 入力と操作の受け付け ----
+    document.addEventListener('focusin', event => { if (event.target.classList.contains('money-input')) focusRaw(event.target); });
+    document.addEventListener('focusout', event => {
+      const element = event.target;
+      if (element.classList.contains('money-input')) formatInput(element);
+      if (element.dataset.rowName) {
+        const row = state[element.dataset.section].find(item => item.id === element.dataset.rowName);
+        if (row) row.name = element.textContent.trim() || '未設定科目'; save(); renderRules();
+      }
+      if (element.dataset.accountName) {
+        const account = state.accounts.find(item => item.id === element.dataset.accountName);
+        if (account) account.name = element.textContent.trim() || '未設定口座'; save(); calculateAccounts();
+      }
+    });
+    document.addEventListener('input', event => {
+      const element = event.target;
+      if (element.dataset.source === 'values') state.values[key(element.dataset.row, Number(element.dataset.month), element.dataset.kind)] = rawNumber(element.value);
+      if (element.dataset.source === 'opening') state.opening[`${element.dataset.month}-${element.dataset.kind}`] = rawNumber(element.value);
+      if (element.dataset.accountValue) {
+        const account = state.accounts.find(item => item.id === element.dataset.accountValue);
+        if (account) account.value = rawNumber(element.value); calculateAccounts();
+      }
+      if (element.classList.contains('money-input')) { calculate(); save(); }
+      if (element.id === 'company') { state.company = element.value; save(); }
+      if (element.id === 'createdDate') { state.createdDate = element.value; save(); }
+    });
+    document.addEventListener('click', event => {
+      const element = event.target;
+      if (element.dataset.addRow) {
+        const section = element.dataset.addRow; state[section].push({ id: `custom_${state.nextId++}`, name: '追加科目' }); save(); renderCashflow();
+      }
+      if (element.dataset.removeRow) {
+        state[element.dataset.section] = state[element.dataset.section].filter(row => row.id !== element.dataset.removeRow); save(); renderCashflow(); renderRules();
+      }
+      if (element.dataset.removeAccount && state.accounts.length > 1) {
+        state.accounts = state.accounts.filter(account => account.id !== element.dataset.removeAccount); save(); renderAccounts();
+      }
+      if (element.dataset.editRule) openRuleEditor(state.recurringRules.find(rule => rule.id === element.dataset.editRule));
+      if (element.dataset.removeRule && confirm('この繰り返しルールを削除しますか？')) {
+        state.recurringRules = state.recurringRules.filter(rule => rule.id !== element.dataset.removeRule); save(); renderRules();
+      }
+      if (element.dataset.editStore) openStoreEditor(element.dataset.editStore);
+      if (element.dataset.removeStore) {
+        const store = element.dataset.removeStore;
+        const learningCount = Object.values(state.bankStoreLearning).filter(value => value === store).length;
+        const rowCount = state.ledgerRows.filter(row => row.store === store).length;
+        if (confirm(`店「${store}」を削除しますか？\n学習済みの摘要 ${learningCount}件、取込済み明細 ${rowCount}件の店は「共通」に変更されます。`)) removeStore(store);
+      }
+    });
+    byId('addAccount').addEventListener('click', () => { state.accounts.push({ id: `a${state.nextId++}`, name: '追加口座', value: '' }); save(); renderAccounts(); });
+    byId('startMonth').addEventListener('change', event => { state.startMonth = event.target.value || '2026-09'; save(); renderCashflow(); });
+    byId('sixMonthToggle').addEventListener('change', event => { state.viewMode = event.target.checked ? 'six' : 'rolling5'; save(); renderCashflow(); });
+    byId('printBtn').addEventListener('click', () => window.print());
+    byId('ledgerExportBtn').addEventListener('click', exportLedger);
+    byId('exportBackupBtn').addEventListener('click', exportBackup);
+    byId('importBackupBtn').addEventListener('click', () => byId('backupFileInput').click());
+    byId('backupFileInput').addEventListener('change', event => { const file = event.target.files[0]; event.target.value = ''; if (file) importBackupFile(file); });
+    byId('spreadsheetImportBtn').addEventListener('click', () => byId('spreadsheetFileInput').click());
+    byId('spreadsheetFileInput').addEventListener('change', async event => {
+      const file = event.target.files[0]; event.target.value = ''; if (!file) return;
+      try {
+        const text = await readCsvFile(file);
+        openMappingDialog('spreadsheet', text, mapping => { try { importSpreadsheetText(text, mapping); } catch (_) { /* 本文上部へ日本語で表示済み。 */ } });
+      } catch (_) { showMessage('CSVファイルを読み込めませんでした。入力内容は変更していません。', true); }
+    });
+    byId('bankImportBtn').addEventListener('click', openAccountPicker);
+    byId('bankFileInput').addEventListener('change', async event => {
+      const file = event.target.files[0]; event.target.value = ''; if (!file) return;
+      try {
+        const text = await readCsvFile(file);
+        openMappingDialog('bank', text, mapping => openBankClassification(text, mapping, selectedBankAccountId));
+      } catch (_) { showMessage('銀行CSVファイルを読み込めませんでした。入力内容は変更していません。', true); }
+    });
+    byId('salesImportBtn').addEventListener('click', () => byId('salesFileInput').click());
+    byId('salesFileInput').addEventListener('change', async event => {
+      const file = event.target.files[0]; event.target.value = ''; if (!file) return;
+      try { importSalesText(await file.text()); } catch (_) { /* 本文上部へ日本語で表示済み。 */ }
+    });
+    byId('paymentsImportBtn').addEventListener('click', () => byId('paymentsFileInput').click());
+    byId('paymentsFileInput').addEventListener('change', async event => {
+      const file = event.target.files[0]; event.target.value = ''; if (!file) return;
+      try { openPaymentClassification(await file.text()); }
+      catch (_) { showMessage('支払予定JSONファイルを読み込めませんでした。入力内容は変更していません。', true); }
+    });
+    byId('addRuleBtn').addEventListener('click', () => openRuleEditor());
+    byId('applyRulesBtn').addEventListener('click', () => applyRecurringRules());
+    byId('addStoreBtn').addEventListener('click', () => openStoreEditor());
+    byId('resetBtn').addEventListener('click', () => {
+      if (!confirm('入力内容をすべて消して白紙に戻しますか？')) return;
+      localStorage.removeItem(STORAGE_KEY); state = defaults(); byId('messageArea').hidden = true; renderAll();
+    });
+    byId('sampleBtn').addEventListener('click', () => insertSampleData());
+    byId('modal').addEventListener('click', event => { if (event.target === byId('modal')) closeModal(); });
+
+    // ---- 検収用フック（画面操作やダウンロードを起こさない） ----
+    window.__test__ = Object.freeze({
+      getState: () => deepCopy(state),
+      getBackupJson: backupText,
+      getLedgerJson: ledgerText,
+      getStoreNames: () => [...state.storeNames],
+      setStoreNames: names => {
+        const replacements = Object.create(null);
+        const normalized = Array.isArray(names) ? names.map(name => String(name).trim()) : [];
+        const removed = state.storeNames.filter(name => !normalized.includes(name));
+        const added = normalized.filter(name => !state.storeNames.includes(name));
+        if (removed.length === added.length) {
+          removed.forEach(oldName => {
+            const replacement = normalized[state.storeNames.indexOf(oldName)];
+            if (added.includes(replacement)) replacements[oldName] = replacement;
+          });
+        }
+        return updateStoreNames(names, replacements);
+      },
+      setColumnMapping: (type, mapping) => {
+        if (type !== 'spreadsheet' && type !== 'bank') throw new Error('typeはspreadsheetまたはbankです。');
+        state.columnMappings[type] = { ...mapping }; save(); return deepCopy(state.columnMappings[type]);
+      },
+      setBankClassification: (description, subjectReference, store = DEFAULT_STORE) => {
+        const subject = resolveSubject(subjectReference);
+        if (!subject) throw new Error('科目が見つかりません。');
+        if (!storeOptions().includes(store)) throw new Error(`店は${storeOptions().join('・')}から指定してください。`);
+        setOwnValue(state.bankLearning, String(description), subject.id);
+        setOwnValue(state.bankStoreLearning, String(description), store);
+        save(); return subject.id;
+      },
+      setRecurringRules: rules => {
+        if (!Array.isArray(rules) || !rules.every(validRule)) throw new Error('繰り返しルールの形式が不正です。');
+        state.recurringRules = deepCopy(rules); save(); renderRules(); return deepCopy(state.recurringRules);
+      },
+      setViewMode: mode => {
+        if (mode !== 'rolling5' && mode !== 'six') throw new Error('表示形式が不正です。');
+        state.viewMode = mode; save(); renderCashflow(); return mode;
+      },
+      importSpreadsheetCsv: (text, mapping = state.columnMappings.spreadsheet) => importSpreadsheetText(text, mapping, { silent: true }),
+      importBankCsv: (text, mapping = state.columnMappings.bank, classifications = {}, accountId = '', storeClassifications = {}) => importBankText(text, mapping, classifications, accountId, { silent: true, storeClassifications }),
+      importSalesJson: text => importSalesText(text, { confirm: false, silent: true }),
+      importPaymentsJson: (text, classifications = {}) => importPaymentsText(text, classifications, { confirm: false, silent: true }),
+      getPaymentsRows: () => deepCopy(state.paymentsRows),
+      insertSampleData: () => insertSampleData({ confirm: false }),
+      applyRecurringRules: () => applyRecurringRules({ confirm: false, silent: true }),
+      parseDate: value => parseDate(value),
+      decodeCsvBuffer: buffer => decodeCsvBuffer(buffer)
+    });
+
+    // 起動時の描画失敗でも保存データを退避し、操作可能な初期画面を残す。
+    try {
+      renderAll();
+      if (startupMessage) showMessage(startupMessage, true);
+    } catch (_) {
+      const brokenData = localStorage.getItem(STORAGE_KEY);
+      if (brokenData !== null) localStorage.setItem(BROKEN_STORAGE_KEY, brokenData);
+      localStorage.removeItem(STORAGE_KEY);
+      state = defaults();
+      renderAll();
+      showMessage('保存データが壊れていたため、白紙で開きました。バックアップがあれば『バックアップ読み込み』で復元できます。', true);
+    }
+  })();
+  </script>
+</body>
+</html>

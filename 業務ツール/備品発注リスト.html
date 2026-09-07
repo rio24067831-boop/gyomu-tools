@@ -1,0 +1,440 @@
+<!doctype html>
+<!--
+  備品発注リスト（単一HTML・デモ版）
+  飲食店の従業員がスマホで在庫を確認し、発注先ごとの発注文を作るためのツールです。
+  主な機能: 3段階の在庫チェック、発注文のコピー、発注履歴、備品マスター、CSV一括取り込み、JSONバックアップ。
+  初回起動は空（品目0）。見本データは「備品マスター」の「見本データを入れる」ボタンで任意投入、「白紙に戻す」で全消去。
+  データの流れ: 画面で入力 → ブラウザ内のlocalStorageへ保存 → 発注文・履歴・バックアップとして出力。
+  入力内容や保存データを外部へ送信する処理は一切ありません。外部読み込み・ネット通信もありません。
+-->
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>備品発注リスト</title>
+<style>
+/* ---- 共通の色・文字・土台 ---- */
+:root{--bg:#f4f6f7;--card:#fff;--line:#e3e6e9;--row:#eef0f2;--ink:#1b2126;--muted:#6b737b;--accent:#1f6f6b;--accent-soft:#e6f2f1;--warn:#b4452a;--warn-soft:#fff7f4;--warn-line:#f3cfc3}
+*{box-sizing:border-box}
+html,body{margin:0;max-width:100%;overflow-x:hidden;background:var(--bg);color:var(--ink);font-family:"Hiragino Sans","Hiragino Kaku Gothic ProN","Yu Gothic","Noto Sans JP",sans-serif;-webkit-font-smoothing:antialiased}
+button,input,select,textarea{font:inherit;color:inherit}
+button,a,label,select{touch-action:manipulation}
+.num{font-variant-numeric:tabular-nums}
+.serif,h1,h2{font-family:"Hiragino Mincho ProN","Yu Mincho","Noto Serif JP",serif;letter-spacing:.06em}
+.app{display:flex;min-height:100vh}
+.side{width:232px;flex:0 0 232px;background:var(--card);border-right:1px solid var(--line);padding:26px 14px;display:flex;flex-direction:column;gap:4px}
+.brand{padding:0 12px 18px;font-size:11px;letter-spacing:.22em;color:var(--muted)}
+.nav{display:flex;align-items:center;gap:10px;min-height:44px;padding:9px 12px;border-radius:8px;color:#3d474f;font-size:13px;text-decoration:none;white-space:nowrap}
+.nav .no{font-size:11px;color:var(--muted);width:20px}.nav.on{background:var(--accent-soft);color:var(--accent);font-weight:700}.nav.on .no{color:var(--accent)}
+.nav.off{color:#a3aab0}.tag{font-size:10px;margin-left:auto;color:#a3aab0}.foot{margin-top:auto;padding:12px;font-size:11px;color:var(--muted);line-height:1.6}
+.main{min-width:0;flex:1;padding:28px 34px 48px}.head{display:flex;align-items:flex-end;gap:14px;margin-bottom:18px}.head-copy{min-width:0}.sub{font-size:12px;color:var(--muted);letter-spacing:.08em}.head h1{margin:5px 0 0;font-size:30px;font-weight:600}.head-actions{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.btn{min-height:44px;padding:8px 15px;border:1px solid #d9dde1;border-radius:8px;background:#fff;font-size:13px;font-weight:600;cursor:pointer}.btn:hover{border-color:var(--accent)}.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}.btn.danger{color:var(--warn);border-color:var(--warn-line);background:var(--warn-soft)}.btn:disabled{opacity:.5;cursor:not-allowed}
+.notice{display:none;margin:0 0 14px;padding:12px 14px;border:1px solid var(--line);border-radius:8px;background:#fff;font-size:13px}.notice.show{display:block}.notice.error{color:var(--warn);border-color:var(--warn-line);background:var(--warn-soft)}
+/* ---- 画面内タブ ---- */
+.tabs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-bottom:18px}.tab{min-height:48px;border:1px solid var(--line);border-radius:8px;background:#fff;font-weight:700;font-size:13px;cursor:pointer}.tab.active{color:var(--accent);background:var(--accent-soft);border-color:var(--accent)}
+.view{display:none}.view.active{display:block}.panel{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden;margin-bottom:16px}.panel-bar{display:flex;align-items:center;gap:12px;padding:14px 18px;border-bottom:1px solid var(--line)}.panel-bar h2{margin:0;font-size:18px;font-weight:600}.panel-body{padding:16px 18px}.grow{flex:1}.muted{color:var(--muted)}.small{font-size:12px}.empty{padding:28px 18px;text-align:center;color:var(--muted);font-size:14px}
+/* ---- 在庫チェック ---- */
+.filter-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.field{display:flex;flex-direction:column;gap:5px;font-size:12px;color:var(--muted)}.field input,.field select,.field textarea,select,input,textarea{min-height:44px;border:1px solid #d9dde1;border-radius:8px;background:#fff;padding:9px 11px}.field textarea,textarea{min-height:92px;resize:vertical}.filter-row select{min-width:180px}
+.item-list{display:flex;flex-direction:column}.stock-card{padding:16px 18px;border-bottom:1px solid var(--row)}.stock-card:last-child{border-bottom:0}.item-top{display:flex;align-items:flex-start;gap:10px;margin-bottom:11px}.item-name{font-weight:700;line-height:1.4}.item-meta{font-size:12px;color:var(--muted);margin-top:3px}.remaining{margin-left:auto;width:92px;flex:0 0 92px}.remaining label{display:block;font-size:11px;color:var(--muted);margin-bottom:4px}.remaining input{width:100%;height:44px;border:1px solid #d9dde1;border-radius:8px;padding:8px;text-align:center}
+.states{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}.state{min-height:48px;border:1px solid #d9dde1;border-radius:8px;background:#fff;font-size:14px;font-weight:700;cursor:pointer}.state.selected{color:var(--accent);border-color:var(--accent);background:var(--accent-soft)}.state[data-status="none"].selected{color:var(--warn);border-color:var(--warn);background:var(--warn-soft)}
+/* ---- 発注文・履歴 ---- */
+.order-card{padding:16px 18px;border-bottom:1px solid var(--row)}.order-card:last-child{border-bottom:0}.order-title{display:flex;align-items:center;gap:8px;margin-bottom:10px}.order-title strong{font-family:"Hiragino Mincho ProN","Yu Mincho","Noto Serif JP",serif;font-size:18px}.order-text{width:100%;min-height:190px;line-height:1.65;background:#fff;border:1px solid var(--line);border-radius:8px;padding:12px;white-space:pre-wrap;overflow-wrap:anywhere}.order-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}.status-message{min-height:20px;margin-top:6px;font-size:12px;color:var(--accent)}
+.month-heading{padding:12px 18px;background:var(--accent-soft);color:var(--accent);font-weight:700}.history-entry{padding:14px 18px;border-bottom:1px solid var(--row)}.history-entry:last-child{border-bottom:0}.history-head{display:flex;justify-content:space-between;gap:10px;font-weight:700}.history-items{margin:8px 0 0;padding-left:20px;font-size:13px;line-height:1.7}
+/* ---- マスター・取り込み ---- */
+.master-grid{display:grid;grid-template-columns:2fr .8fr 1.5fr 1.3fr 1fr 2fr auto;gap:8px;align-items:end}.master-list{overflow-x:auto}.master-row{display:grid;grid-template-columns:minmax(130px,2fr) 70px minmax(120px,1.5fr) minmax(110px,1.3fr) 90px minmax(120px,2fr) 96px;gap:8px;align-items:center;padding:10px 14px;border-bottom:1px solid var(--row);min-width:820px;font-size:13px}.master-row.header{font-size:11px;color:var(--muted);font-weight:700}.row-actions{display:flex;gap:4px}.row-actions .btn{padding:6px 9px;min-height:44px}
+.dialog{position:fixed;inset:0;z-index:20;display:none;align-items:flex-start;justify-content:center;padding:18px;background:rgba(27,33,38,.48);overflow:auto}.dialog.open{display:flex}.dialog-card{width:min(700px,100%);margin:auto;background:#fff;border:1px solid var(--line);border-radius:12px;overflow:hidden}.dialog-head{display:flex;align-items:center;padding:14px 18px;border-bottom:1px solid var(--line)}.dialog-head h2{margin:0;font-size:18px}.dialog-body{padding:18px}.dialog-actions{display:flex;justify-content:flex-end;gap:8px;padding:14px 18px;border-top:1px solid var(--line)}.steps{display:flex;gap:6px;margin-bottom:14px}.step{flex:1;padding:8px;border-bottom:3px solid var(--line);font-size:12px;color:var(--muted)}.step.on{border-color:var(--accent);color:var(--accent);font-weight:700}.mapping{display:grid;grid-template-columns:1fr 1fr;gap:10px}.preview{max-height:270px;overflow:auto;border:1px solid var(--line);border-radius:8px}.preview-row{display:grid;grid-template-columns:repeat(6,minmax(110px,1fr));gap:8px;padding:8px;border-bottom:1px solid var(--row);font-size:12px;min-width:700px}.file-input{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
+@media(max-width:800px){.app{display:block}.side{width:100%;height:auto;flex-direction:row;overflow-x:auto;padding:8px;border:0;border-bottom:1px solid var(--line);gap:4px}.brand,.foot{display:none}.nav{flex:0 0 auto;padding:8px 10px}.nav.off .tag{display:none}.main{padding:16px 12px 36px}.head{align-items:flex-start;flex-direction:column}.head h1{font-size:26px}.head-actions{width:100%;margin-left:0;justify-content:flex-start}.head-actions .btn{flex:1;min-width:130px}.tabs{gap:5px}.tab{font-size:12px;padding:5px}.panel-bar{padding:13px 14px}.panel-bar.stack{flex-wrap:wrap}.panel-bar.stack .btn{flex:1 1 auto;white-space:nowrap}.panel-bar.stack h2{flex-basis:100%}.panel-bar.stack .grow{display:none}.panel-body{padding:14px}.stock-card,.order-card{padding:14px}.master-grid{grid-template-columns:1fr 1fr}.master-grid .field:first-child,.master-grid .field:nth-child(6),.master-grid .form-actions{grid-column:1/-1}.mapping{grid-template-columns:1fr}.dialog{padding:8px}.item-top{flex-wrap:wrap}.remaining{width:100%;flex-basis:100%;display:flex;align-items:center;gap:8px}.remaining label{margin:0}.remaining input{width:100px}.states{gap:5px}}
+@media(max-width:390px){.main{padding-left:10px;padding-right:10px}.tabs{grid-template-columns:repeat(2,minmax(0,1fr))}.state{font-size:13px}.head-actions .btn{min-width:0}.filter-row select{width:100%;min-width:0}}
+@media print{.side,.head-actions,.tabs,.btn,.filter-row{display:none!important}.main{padding:0}.view{display:none!important}.view.active{display:block!important}.panel{border-color:#000}.order-text{border-color:#000}}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="side" aria-label="業務ツール一覧">
+    <div class="brand">業務ツール</div>
+    <!-- ツール項目はSIDEBAR_TOOLS配列（スクリプト冒頭）から起動時に描画 -->
+    <div class="foot">データはこのパソコンの中にだけ保存されます。ネット通信なし。<br>画面バージョン: 2026-09-06</div>
+  </aside>
+  <main class="main">
+    <header class="head">
+      <div class="head-copy"><div class="sub" id="updatedLabel">店舗備品 ・ 未更新</div><h1>備品発注リスト</h1></div>
+      <div class="head-actions">
+        <button class="btn" id="backupButton" type="button">バックアップ書き出し</button>
+        <label class="btn" for="restoreFile">バックアップ読み込み</label>
+        <input class="file-input" id="restoreFile" type="file" accept="application/json,.json">
+      </div>
+    </header>
+    <div class="notice" id="notice" role="status" aria-live="polite"></div>
+    <nav class="tabs" aria-label="画面切り替え">
+      <button class="tab active" type="button" data-view="stock">在庫チェック</button>
+      <button class="tab" type="button" data-view="orders">発注文</button>
+      <button class="tab" type="button" data-view="history">発注履歴</button>
+      <button class="tab" type="button" data-view="master">備品マスター</button>
+    </nav>
+
+    <section class="view active" id="view-stock">
+      <div class="panel">
+        <div class="panel-bar"><h2>在庫チェック</h2><span class="grow"></span><span class="small muted" id="stockCount"></span></div>
+        <div class="panel-body filter-row"><label class="field">発注先で絞り込み<select id="supplierFilter"></select></label><span class="small muted">「少ない」「なし」を選ぶと発注文に入ります。</span></div>
+        <div class="item-list" id="stockList"></div>
+      </div>
+    </section>
+
+    <section class="view" id="view-orders">
+      <div class="panel"><div class="panel-bar"><h2>発注文</h2></div><div id="orderList"></div></div>
+    </section>
+
+    <section class="view" id="view-history">
+      <div class="panel"><div class="panel-bar"><h2>発注履歴</h2><span class="grow"></span><span class="small muted" id="historyCount"></span></div><div id="historyList"></div></div>
+    </section>
+
+    <section class="view" id="view-master">
+      <div class="panel">
+        <div class="panel-bar stack"><h2 id="masterFormTitle">備品を追加</h2><span class="grow"></span><button class="btn" id="csvOpenButton" type="button">一括取り込み</button><button class="btn" id="sampleButton" type="button">見本データを入れる</button><button class="btn danger" id="clearButton" type="button">白紙に戻す</button></div>
+        <form class="panel-body master-grid" id="masterForm">
+          <label class="field">品名<input id="itemName" maxlength="80" required></label>
+          <label class="field">単位<input id="itemUnit" maxlength="20" required></label>
+          <label class="field">発注先<input id="itemSupplier" maxlength="80" required></label>
+          <label class="field">発注の目安<input id="itemThreshold" maxlength="80" required></label>
+          <label class="field">標準発注数<input id="itemOrderQuantity" maxlength="40" required></label>
+          <label class="field">メモ<input id="itemMemo" maxlength="200"></label>
+          <div class="form-actions"><button class="btn primary" type="submit" id="masterSaveButton">追加</button><button class="btn" type="button" id="masterCancelButton" hidden>取消</button></div>
+        </form>
+        <div class="master-list" id="masterList"></div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div class="dialog" id="csvDialog" role="dialog" aria-modal="true" aria-labelledby="csvTitle">
+  <div class="dialog-card">
+    <div class="dialog-head"><h2 id="csvTitle">CSV一括取り込み</h2></div>
+    <div class="dialog-body">
+      <div class="steps"><div class="step on" data-step-mark="1">1. 貼り付け</div><div class="step" data-step-mark="2">2. 列の対応</div><div class="step" data-step-mark="3">3. 確認</div></div>
+      <div data-csv-step="1"><label class="field">CSVテキスト<textarea id="csvText" placeholder="品名,単位,発注先,発注の目安,標準発注数,メモ"></textarea></label><p class="small muted">1行目は見出しにしてください。引用符で囲まれたカンマにも対応します。</p></div>
+      <div data-csv-step="2" hidden><p class="small">CSVの各列を、備品マスターの項目に対応づけてください。</p><div class="mapping" id="csvMapping"></div></div>
+      <div data-csv-step="3" hidden><p class="small" id="previewSummary"></p><div class="preview" id="csvPreview"></div></div>
+    </div>
+    <div class="dialog-actions"><button class="btn" id="csvCancelButton" type="button">閉じる</button><button class="btn" id="csvBackButton" type="button" hidden>戻る</button><button class="btn primary" id="csvNextButton" type="button">次へ</button></div>
+  </div>
+</div>
+
+<script>
+"use strict";
+(() => {
+  // ---- 定数と見本データ ----
+  const STORAGE_KEY = "freesia-supply-order-v20260905";
+  const DATA_VERSION = 1;
+  const STATUS_VALUES = ["enough", "low", "none"];
+  const STATUS_LABELS = {enough:"十分", low:"少ない", none:"なし"};
+  const MAX_ITEMS = 1000;
+  const MAX_HISTORY = 5000;
+  const FIELD_DEFINITIONS = [
+    {key:"name",label:"品名",required:true},{key:"unit",label:"単位",required:true},
+    {key:"supplier",label:"発注先",required:true},{key:"threshold",label:"発注の目安",required:true},
+    {key:"orderQuantity",label:"標準発注数",required:true},{key:"memo",label:"メモ",required:false}
+  ];
+  const SAMPLE_ROWS = [
+    ["竹の割り箸","袋","みどり紙商事","残り2袋","5袋","客席用"],["白い紙ナプキン","束","みどり紙商事","残り3束","10束","卓上用"],["厚手おしぼり","箱","みどり紙商事","残り1箱","4箱","個包装"],["持ち帰り紙袋 小","束","みどり紙商事","残り2束","5束",""],["持ち帰り紙袋 大","束","みどり紙商事","残り2束","5束",""],["紙製コースター","箱","みどり紙商事","残り1箱","3箱",""],["会計伝票","冊","みどり紙商事","残り5冊","20冊",""],["感熱レジロール","箱","みどり紙商事","残り1箱","3箱","幅を確認"],
+    ["業務用ラップ 小","本","あさひ厨房用品","残り2本","6本",""],["業務用ラップ 大","本","あさひ厨房用品","残り2本","6本",""],["アルミホイル","本","あさひ厨房用品","残り2本","6本",""],["保存用袋 小","箱","あさひ厨房用品","残り1箱","4箱",""],["保存用袋 大","箱","あさひ厨房用品","残り1箱","4箱",""],["使い捨て手袋 S","箱","あさひ厨房用品","残り2箱","5箱","調理用"],["使い捨て手袋 M","箱","あさひ厨房用品","残り2箱","5箱","調理用"],["使い捨て手袋 L","箱","あさひ厨房用品","残り2箱","5箱","調理用"],
+    ["食器用洗剤","本","青空衛生サービス","残り2本","6本",""],["厨房用油汚れ洗剤","本","青空衛生サービス","残り1本","4本",""],["除菌用液剤","本","青空衛生サービス","残り2本","6本",""],["泡せっけん補充液","袋","青空衛生サービス","残り2袋","6袋",""],["漂白用洗剤","本","青空衛生サービス","残り1本","4本",""],["ごみ袋 45L","箱","青空衛生サービス","残り2箱","5箱",""],["ごみ袋 70L","箱","青空衛生サービス","残り2箱","5箱",""],
+    ["持ち帰り容器 小","袋","こもれび包材","残り2袋","8袋","ふた込み"],["持ち帰り容器 大","袋","こもれび包材","残り2袋","8袋","ふた込み"],["汁物容器","袋","こもれび包材","残り1袋","5袋","ふた込み"],["透明カップ","袋","こもれび包材","残り2袋","6袋",""],["透明カップ用ふた","袋","こもれび包材","残り2袋","6袋",""],["料理用小分けカップ","袋","こもれび包材","残り1袋","5袋",""],["持ち帰り用スプーン","袋","こもれび包材","残り2袋","6袋",""]
+  ];
+
+  let appData;
+  let editingItemId = null;
+  let lastCopiedText = "";
+  let csvState = {step:1, headers:[], rows:[], mapping:{}, preview:[]};
+
+  function makeSampleData() {
+    return {version:DATA_VERSION,updatedAt:null,items:SAMPLE_ROWS.map((row,index)=>({id:"sample-"+(index+1),name:row[0],unit:row[1],supplier:row[2],threshold:row[3],orderQuantity:row[4],memo:row[5],status:"enough",remaining:""})),history:[]};
+  }
+  // 初回起動は空で始める（見本はボタンで任意投入・2026-09-06 ゆう指示）
+  function makeEmptyData() { return {version:DATA_VERSION,updatedAt:null,items:[],history:[]}; }
+
+  // ---- 値の検証と保存 ----
+  function isPlainObject(value) { return value !== null && typeof value === "object" && !Array.isArray(value); }
+  function isValidDateTime(value) {
+    if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(value)) return false;
+    const date = new Date(value);
+    return Number.isFinite(date.getTime()) && date.toISOString() === (value.includes(".") ? value : value.replace("Z", ".000Z"));
+  }
+  function validText(value, maximum, required) { return typeof value === "string" && value.length <= maximum && (!required || value.trim().length > 0); }
+  function validateItem(item) {
+    return isPlainObject(item) && validText(item.id,100,true) && validText(item.name,80,true) && validText(item.unit,20,true) &&
+      validText(item.supplier,80,true) && validText(item.threshold,80,true) && validText(item.orderQuantity,40,true) &&
+      validText(item.memo,200,false) && STATUS_VALUES.includes(item.status) && validText(item.remaining,40,false);
+  }
+  function validateHistoryEntry(entry) {
+    return isPlainObject(entry) && validText(entry.id,100,true) && isValidDateTime(entry.orderedAt) && validText(entry.supplier,80,true) &&
+      Array.isArray(entry.items) && entry.items.length > 0 && entry.items.length <= MAX_ITEMS && entry.items.every(item=>isPlainObject(item) && validText(item.name,80,true) && validText(item.quantity,40,true));
+  }
+  function validateData(data) {
+    if (!isPlainObject(data) || data.version !== DATA_VERSION || !Array.isArray(data.items) || !Array.isArray(data.history)) throw new Error("データの形式が正しくありません。");
+    if (data.items.length > MAX_ITEMS || data.history.length > MAX_HISTORY) throw new Error("データ件数が上限を超えています。");
+    if (!data.items.every(validateItem) || !data.history.every(validateHistoryEntry)) throw new Error("備品または履歴に不正な値があります。");
+    if (!(data.updatedAt === null || isValidDateTime(data.updatedAt))) throw new Error("更新日時が正しくありません。");
+    const ids = new Set(data.items.map(item=>item.id));
+    if (ids.size !== data.items.length) throw new Error("備品番号が重複しています。");
+    return data;
+  }
+  function saveData() {
+    appData.updatedAt = new Date().toISOString();
+    validateData(appData);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(appData));
+    updateDateLabel();
+  }
+  function loadData() {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (!stored) return makeEmptyData();
+    return validateData(JSON.parse(stored));
+  }
+  function createId(prefix) {
+    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") return prefix+"-"+crypto.randomUUID();
+    return prefix+"-"+Date.now()+"-"+Math.random().toString(36).slice(2);
+  }
+
+  // ---- サイドバー（業務ツール一覧。共通デザイン指針7: SIDEBAR_TOOLS配列で一元管理） ----
+  // installed:true=導入済み（リンクあり）、false=未導入（薄字＋タグ）。
+  // 表示番号は抜け番なしの連番（指針§8の対応表・2026-09-05ゆう指示）。フォルダ名・ファイル名・内部IDは旧番号のまま変えない。
+  const SIDEBAR_TOOLS = [
+    {no:"01", name:"日報分析",       file:"./日報分析.html",       installed:true},
+    {no:"02", name:"資金繰り表",     file:"./資金繰り表.html",     installed:true},
+    {no:"03", name:"原価管理",       file:"./原価管理.html",       installed:true},
+    {no:"04", name:"月次PL",         file:"./月次PL.html",         installed:true},
+    {no:"05", name:"給与明細作成",   file:"./給与明細作成.html",   installed:true},
+    {no:"06", name:"支払期日管理",   file:"./支払期日管理.html",   installed:true},
+    {no:"07", name:"採用管理",       file:"./採用管理.html",       installed:true},
+    {no:"08", name:"補助金チェッカー", file:"./補助金チェッカー.html", installed:true},
+    {no:"09", name:"備品発注リスト", file:"./備品発注リスト.html", installed:true}
+  ];
+  const CURRENT_TOOL_NO = "09"; // このファイル自身の表示番号（強調表示に使う）
+  function renderSidebar() {
+    const aside=document.querySelector(".side");const foot=aside.querySelector(".foot");
+    SIDEBAR_TOOLS.forEach(tool=>{
+      let node;
+      if(tool.installed){node=element("a","nav"+(tool.no===CURRENT_TOOL_NO?" on":""));node.href=tool.file;}
+      else{node=element("span","nav off");}
+      node.appendChild(element("span","no",tool.no));
+      node.appendChild(document.createTextNode(tool.name));
+      if(!tool.installed)node.appendChild(element("span","tag","未導入"));
+      aside.insertBefore(node,foot);
+    });
+  }
+
+  // ---- 共通の画面部品 ----
+  const byId = id => document.getElementById(id);
+  function element(tag,className,textValue) {
+    const node=document.createElement(tag);
+    if(className) node.className=className;
+    if(textValue !== undefined) node.textContent=textValue;
+    return node;
+  }
+  function clearNode(node) { while(node.firstChild) node.removeChild(node.firstChild); }
+  function showNotice(message,isError=false) {
+    const notice=byId("notice"); notice.textContent=message; notice.className="notice show"+(isError?" error":"");
+    window.setTimeout(()=>{ if(notice.textContent===message) notice.className="notice"; },5000);
+  }
+  function updateDateLabel() {
+    if(!appData.updatedAt){byId("updatedLabel").textContent="店舗備品 ・ 未更新";return;}
+    const date=new Date(appData.updatedAt);
+    byId("updatedLabel").textContent="店舗備品 ・ "+new Intl.DateTimeFormat("ja-JP",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"}).format(date)+" 更新";
+  }
+  function switchView(name) {
+    document.querySelectorAll(".tab").forEach(button=>button.classList.toggle("active",button.dataset.view===name));
+    document.querySelectorAll(".view").forEach(view=>view.classList.toggle("active",view.id==="view-"+name));
+    if(name==="orders") renderOrders(); if(name==="history") renderHistory(); if(name==="master") renderMaster();
+    window.scrollTo({top:0,behavior:"smooth"});
+  }
+
+  // ---- 在庫チェック ----
+  function suppliers() { return [...new Set(appData.items.map(item=>item.supplier))].sort((a,b)=>a.localeCompare(b,"ja")); }
+  function renderSupplierFilter() {
+    const select=byId("supplierFilter"), previous=select.value; clearNode(select);
+    const all=element("option",null,"すべての発注先"); all.value=""; select.appendChild(all);
+    suppliers().forEach(name=>{const option=element("option",null,name);option.value=name;select.appendChild(option);});
+    select.value=suppliers().includes(previous)?previous:"";
+  }
+  function renderStock() {
+    const list=byId("stockList"), filter=byId("supplierFilter").value; clearNode(list);
+    const items=appData.items.filter(item=>!filter||item.supplier===filter);
+    byId("stockCount").textContent=items.length+"品";
+    if(items.length===0){list.appendChild(element("div","empty",appData.items.length===0?"備品がまだ登録されていません。「備品マスター」から追加するか、見本データを入れてください。":"該当する備品がありません。"));return;}
+    items.forEach(item=>{
+      const card=element("article","stock-card"); const top=element("div","item-top"); const copy=element("div","grow");
+      copy.appendChild(element("div","item-name",item.name)); copy.appendChild(element("div","item-meta",item.supplier+" ／ 発注目安: "+item.threshold+" ／ 標準: "+item.orderQuantity));
+      if(item.memo) copy.appendChild(element("div","item-meta",item.memo)); top.appendChild(copy);
+      const remaining=element("div","remaining"); const label=element("label",null,"残数メモ（任意）"); label.htmlFor="remaining-"+item.id; const input=element("input"); input.id="remaining-"+item.id;input.value=item.remaining;input.maxLength=40;input.inputMode="decimal";input.dataset.itemId=item.id;input.setAttribute("aria-label",item.name+"の残数メモ");remaining.append(label,input);top.appendChild(remaining);card.appendChild(top);
+      const states=element("div","states"); STATUS_VALUES.forEach(status=>{const button=element("button","state"+(item.status===status?" selected":""),STATUS_LABELS[status]);button.type="button";button.dataset.itemId=item.id;button.dataset.status=status;button.setAttribute("aria-pressed",String(item.status===status));states.appendChild(button);});card.appendChild(states);list.appendChild(card);
+    });
+  }
+  function updateItemStatus(itemId,status) {
+    const item=appData.items.find(candidate=>candidate.id===itemId); if(!item||!STATUS_VALUES.includes(status)) return;
+    item.status=status; saveData(); renderStock();
+  }
+  function updateRemaining(itemId,value) {
+    const item=appData.items.find(candidate=>candidate.id===itemId); if(!item) return;
+    item.remaining=value.slice(0,40); saveData();
+  }
+
+  // ---- 発注文の生成・コピー・確定 ----
+  function orderItemsForSupplier(supplier) { return appData.items.filter(item=>item.supplier===supplier && (item.status==="low"||item.status==="none")); }
+  function buildOrderText(supplier) {
+    if(typeof supplier!=="string") return "";
+    const items=orderItemsForSupplier(supplier);
+    if(items.length===0) return "";
+    return supplier+"様\nいつもお世話になっております。下記お願いします。\n"+items.map(item=>"・"+item.name+" "+orderQuantityLabel(item)).join("\n")+"\nよろしくお願いいたします。";
+  }
+  // 標準発注数が数字だけのとき（CSV取り込み等）は単位を補って読みやすくする
+  function orderQuantityLabel(item) { return item.orderQuantity+(/^[0-9]+$/.test(item.orderQuantity)?item.unit:""); }
+  function pendingSuppliers() { return suppliers().filter(supplier=>orderItemsForSupplier(supplier).length>0); }
+  function renderOrders() {
+    const list=byId("orderList");clearNode(list);const names=pendingSuppliers();
+    if(names.length===0){list.appendChild(element("div","empty","発注が必要な備品はありません。在庫チェックで「少ない」または「なし」を選んでください。"));return;}
+    names.forEach(supplier=>{
+      const card=element("article","order-card");const title=element("div","order-title");title.appendChild(element("strong",null,supplier));title.appendChild(element("span","small muted",orderItemsForSupplier(supplier).length+"品"));card.appendChild(title);
+      const text=element("textarea","order-text");text.readOnly=true;text.value=buildOrderText(supplier);text.setAttribute("aria-label",supplier+"への発注文");card.appendChild(text);
+      const actions=element("div","order-actions");const copy=element("button","btn primary","コピー");copy.type="button";copy.dataset.copySupplier=supplier;const done=element("button","btn","発注済みにする");done.type="button";done.dataset.doneSupplier=supplier;actions.append(copy,done);card.appendChild(actions);
+      const status=element("div","status-message");status.dataset.copyStatus=supplier;card.appendChild(status);list.appendChild(card);
+    });
+  }
+  async function copyOrder(supplier) {
+    const text=buildOrderText(supplier);if(!text)return;lastCopiedText=text;let copied=false;
+    try { if(navigator.clipboard&&typeof navigator.clipboard.writeText==="function"){await navigator.clipboard.writeText(text);copied=true;} } catch(error) { copied=false; }
+    const status=document.querySelector('[data-copy-status="'+CSS.escape(supplier)+'"]');
+    if(copied){if(status)status.textContent="コピーしました。LINEなどに貼り付けてください。";return;}
+    const area=[...document.querySelectorAll(".order-card")].find(card=>card.querySelector("strong")&&card.querySelector("strong").textContent===supplier)?.querySelector("textarea");
+    if(area){area.focus();area.select();area.setSelectionRange(0,area.value.length);}
+    if(status)status.textContent="自動コピーできませんでした。選択した文面を手動でコピーしてください。";
+  }
+  function markOrdered(supplier) {
+    const items=orderItemsForSupplier(supplier);if(items.length===0)return;
+    if(!window.confirm(supplier+"への発注を履歴に記録し、"+items.length+"品を「十分」に戻しますか？"))return;
+    appData.history.unshift({id:createId("history"),orderedAt:new Date().toISOString(),supplier,items:items.map(item=>({name:item.name,quantity:orderQuantityLabel(item)}))});
+    items.forEach(item=>{item.status="enough";item.remaining="";});saveData();renderOrders();renderStock();showNotice(supplier+"への発注を履歴に記録しました。");
+  }
+
+  // ---- 発注履歴 ----
+  function renderHistory() {
+    const list=byId("historyList");clearNode(list);byId("historyCount").textContent=appData.history.length+"件";
+    if(appData.history.length===0){list.appendChild(element("div","empty","発注履歴はまだありません。"));return;}
+    const grouped=new Map();appData.history.forEach(entry=>{const date=new Date(entry.orderedAt);const key=date.getFullYear()+"年"+(date.getMonth()+1)+"月";if(!grouped.has(key))grouped.set(key,[]);grouped.get(key).push(entry);});
+    grouped.forEach((entries,month)=>{list.appendChild(element("div","month-heading num",month));entries.forEach(entry=>{const wrap=element("article","history-entry");const head=element("div","history-head");head.appendChild(element("span",null,entry.supplier));head.appendChild(element("time","num",new Intl.DateTimeFormat("ja-JP",{year:"numeric",month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"}).format(new Date(entry.orderedAt))));wrap.appendChild(head);const ul=element("ul","history-items");entry.items.forEach(item=>ul.appendChild(element("li",null,item.name+"　"+item.quantity)));wrap.appendChild(ul);list.appendChild(wrap);});});
+  }
+
+  // ---- 備品マスターの追加・編集・削除 ----
+  function readMasterForm() { return {name:byId("itemName").value.trim(),unit:byId("itemUnit").value.trim(),supplier:byId("itemSupplier").value.trim(),threshold:byId("itemThreshold").value.trim(),orderQuantity:byId("itemOrderQuantity").value.trim(),memo:byId("itemMemo").value.trim()}; }
+  function resetMasterForm() { editingItemId=null;byId("masterForm").reset();byId("masterFormTitle").textContent="備品を追加";byId("masterSaveButton").textContent="追加";byId("masterCancelButton").hidden=true; }
+  function saveMasterForm(event) {
+    event.preventDefault();const values=readMasterForm();
+    const wasEditing=editingItemId!==null;
+    const candidate={id:editingItemId||createId("item"),...values,status:"enough",remaining:""};
+    if(!validateItem(candidate)){showNotice("必須項目を入力し、文字数を確認してください。",true);return;}
+    if(editingItemId){const index=appData.items.findIndex(item=>item.id===editingItemId);if(index<0)return;candidate.status=appData.items[index].status;candidate.remaining=appData.items[index].remaining;appData.items[index]=candidate;}else{if(appData.items.length>=MAX_ITEMS){showNotice("備品は1000品まで登録できます。",true);return;}appData.items.push(candidate);}
+    saveData();resetMasterForm();renderSupplierFilter();renderStock();renderMaster();showNotice(wasEditing?"備品を更新しました。":"備品を追加しました。");
+  }
+  function editMaster(itemId) {
+    const item=appData.items.find(candidate=>candidate.id===itemId);if(!item)return;editingItemId=itemId;
+    byId("itemName").value=item.name;byId("itemUnit").value=item.unit;byId("itemSupplier").value=item.supplier;byId("itemThreshold").value=item.threshold;byId("itemOrderQuantity").value=item.orderQuantity;byId("itemMemo").value=item.memo;
+    byId("masterFormTitle").textContent="備品を編集";byId("masterSaveButton").textContent="更新";byId("masterCancelButton").hidden=false;byId("itemName").focus();
+  }
+  function deleteMaster(itemId) {
+    const item=appData.items.find(candidate=>candidate.id===itemId);if(!item||!window.confirm("「"+item.name+"」を削除しますか？"))return;
+    appData.items=appData.items.filter(candidate=>candidate.id!==itemId);saveData();resetMasterForm();renderSupplierFilter();renderStock();renderMaster();showNotice("備品を削除しました。");
+  }
+  function renderMaster() {
+    const list=byId("masterList");clearNode(list);const header=element("div","master-row header");["品名","単位","発注先","発注の目安","標準発注数","メモ","操作"].forEach(label=>header.appendChild(element("div",null,label)));list.appendChild(header);
+    appData.items.forEach(item=>{const row=element("div","master-row");[item.name,item.unit,item.supplier,item.threshold,item.orderQuantity,item.memo||"—"].forEach(value=>row.appendChild(element("div",null,value)));const actions=element("div","row-actions");const edit=element("button","btn","編集");edit.type="button";edit.dataset.editId=item.id;const remove=element("button","btn danger","削除");remove.type="button";remove.dataset.deleteId=item.id;actions.append(edit,remove);row.appendChild(actions);list.appendChild(row);});
+  }
+
+  // ---- CSVの解析・列対応・取り込み ----
+  function parseCsv(text) {
+    const rows=[];let row=[],field="",quoted=false;
+    for(let index=0;index<text.length;index+=1){const character=text[index];if(quoted){if(character==='"'&&text[index+1]==='"'){field+='"';index+=1;}else if(character==='"'){quoted=false;}else{field+=character;}}else if(character==='"'){quoted=true;}else if(character===','){row.push(field);field="";}else if(character==='\n'){row.push(field);rows.push(row);row=[];field="";}else if(character!=='\r'){field+=character;}}
+    if(quoted)throw new Error("引用符が閉じていません。");if(field.length>0||row.length>0){row.push(field);rows.push(row);}return rows.filter(values=>values.some(value=>value.trim()!==""));
+  }
+  function setCsvStep(step) { csvState.step=step;document.querySelectorAll("[data-csv-step]").forEach(node=>node.hidden=Number(node.dataset.csvStep)!==step);document.querySelectorAll("[data-step-mark]").forEach(node=>node.classList.toggle("on",Number(node.dataset.stepMark)===step));byId("csvBackButton").hidden=step===1;byId("csvNextButton").textContent=step===3?"取り込む":"次へ"; }
+  function openCsvDialog(){csvState={step:1,headers:[],rows:[],mapping:{},preview:[]};byId("csvText").value="";setCsvStep(1);byId("csvDialog").classList.add("open");byId("csvText").focus();}
+  function closeCsvDialog(){byId("csvDialog").classList.remove("open");}
+  function buildMapping() {
+    const wrap=byId("csvMapping");clearNode(wrap);FIELD_DEFINITIONS.forEach(definition=>{const label=element("label","field",definition.label+(definition.required?"（必須）":""));const select=element("select");select.dataset.mapField=definition.key;const unused=element("option",null,"対応なし");unused.value="";select.appendChild(unused);csvState.headers.forEach((header,index)=>{const option=element("option",null,(index+1)+"列目: "+(header||"見出しなし"));option.value=String(index);select.appendChild(option);});const guessed=csvState.headers.findIndex(header=>header.trim()===definition.label);select.value=guessed>=0?String(guessed):"";label.appendChild(select);wrap.appendChild(label);});
+  }
+  function makeCsvPreview() {
+    const mapping={};document.querySelectorAll("[data-map-field]").forEach(select=>{mapping[select.dataset.mapField]=select.value===""?null:Number(select.value);});
+    const requiredMissing=FIELD_DEFINITIONS.some(definition=>definition.required&&mapping[definition.key]===null);if(requiredMissing)throw new Error("必須項目の列をすべて対応づけてください。");
+    const used=Object.values(mapping).filter(value=>value!==null);if(new Set(used).size!==used.length)throw new Error("同じCSV列を複数の項目に対応づけることはできません。");
+    csvState.mapping=mapping;csvState.preview=csvState.rows.map((row,index)=>{const values={};FIELD_DEFINITIONS.forEach(definition=>{const column=mapping[definition.key];values[definition.key]=column===null?"":String(row[column]??"").trim();});const item={id:createId("item"),...values,status:"enough",remaining:""};if(!validateItem(item))throw new Error((index+2)+"行目に空欄または長すぎる値があります。");return item;});
+    if(csvState.preview.length===0)throw new Error("取り込むデータ行がありません。");if(appData.items.length+csvState.preview.length>MAX_ITEMS)throw new Error("取り込み後の備品数が1000品を超えます。");
+    const preview=byId("csvPreview");clearNode(preview);const head=element("div","preview-row");FIELD_DEFINITIONS.forEach(definition=>head.appendChild(element("strong",null,definition.label)));preview.appendChild(head);csvState.preview.forEach(item=>{const row=element("div","preview-row");FIELD_DEFINITIONS.forEach(definition=>row.appendChild(element("span",null,item[definition.key]||"—")));preview.appendChild(row);});byId("previewSummary").textContent=csvState.preview.length+"品を追加します。既存の備品は残ります。";
+  }
+  function csvNext() {
+    try { if(csvState.step===1){const parsed=parseCsv(byId("csvText").value);if(parsed.length<2)throw new Error("見出し行と1行以上のデータを貼り付けてください。");csvState.headers=parsed[0];csvState.rows=parsed.slice(1);buildMapping();setCsvStep(2);}else if(csvState.step===2){makeCsvPreview();setCsvStep(3);}else{appData.items.push(...csvState.preview);saveData();closeCsvDialog();renderSupplierFilter();renderStock();renderMaster();showNotice(csvState.preview.length+"品を取り込みました。");} } catch(error){showNotice(error instanceof Error?error.message:"CSVを処理できませんでした。",true);}
+  }
+
+  // ---- 見本データの投入と白紙リセット ----
+  function insertSampleData() {
+    if(appData.items.length>0 && !window.confirm("見本データ30品を追加します。今あるデータはそのまま残ります。よろしいですか？")) return;
+    const sampleItems=makeSampleData().items.map(item=>({...item,id:createId("item")}));
+    if(appData.items.length+sampleItems.length>MAX_ITEMS){showNotice("備品は1000品まで登録できます。",true);return;}
+    appData.items.push(...sampleItems);saveData();renderSupplierFilter();renderStock();renderMaster();showNotice("見本データを入れました。");
+  }
+  function clearAllData() {
+    if(!window.confirm("すべての備品と発注履歴を消して白紙に戻します。よろしいですか？（必要ならバックアップ書き出しを先に）")) return;
+    appData=makeEmptyData();saveData();resetMasterForm();renderAll();showNotice("白紙に戻しました。");
+  }
+
+  // ---- JSONバックアップの書き出し・読み込み ----
+  function backupJson() { validateData(appData);return JSON.stringify(appData,null,2); }
+  function downloadBackup() {
+    const blob=new Blob([backupJson()],{type:"application/json"});const url=URL.createObjectURL(blob);const anchor=document.createElement("a");anchor.href=url;anchor.download="備品発注リスト_バックアップ_"+new Date().toISOString().slice(0,10)+".json";anchor.click();window.setTimeout(()=>URL.revokeObjectURL(url),1000);
+  }
+  async function restoreBackup(file) {
+    if(!file)return;
+    try { if(file.size>5*1024*1024)throw new Error("ファイルが大きすぎます（5MBまで）。");const parsed=validateData(JSON.parse(await file.text()));appData=parsed;localStorage.setItem(STORAGE_KEY,JSON.stringify(appData));resetMasterForm();renderAll();showNotice("バックアップを読み込みました。"); }
+    catch(error){showNotice("読み込めませんでした。"+(error instanceof Error?" "+error.message:""),true);}
+    finally{byId("restoreFile").value="";}
+  }
+
+  // ---- 操作イベント ----
+  function registerEvents() {
+    document.querySelectorAll(".tab").forEach(button=>button.addEventListener("click",()=>switchView(button.dataset.view)));
+    byId("supplierFilter").addEventListener("change",renderStock);
+    byId("stockList").addEventListener("click",event=>{const button=event.target.closest("[data-status]");if(button)updateItemStatus(button.dataset.itemId,button.dataset.status);});
+    byId("stockList").addEventListener("change",event=>{if(event.target.matches("input[data-item-id]"))updateRemaining(event.target.dataset.itemId,event.target.value);});
+    byId("orderList").addEventListener("click",event=>{const copy=event.target.closest("[data-copy-supplier]");const done=event.target.closest("[data-done-supplier]");if(copy)copyOrder(copy.dataset.copySupplier);if(done)markOrdered(done.dataset.doneSupplier);});
+    byId("masterForm").addEventListener("submit",saveMasterForm);byId("masterCancelButton").addEventListener("click",resetMasterForm);
+    byId("masterList").addEventListener("click",event=>{const edit=event.target.closest("[data-edit-id]");const remove=event.target.closest("[data-delete-id]");if(edit)editMaster(edit.dataset.editId);if(remove)deleteMaster(remove.dataset.deleteId);});
+    byId("csvOpenButton").addEventListener("click",openCsvDialog);byId("csvCancelButton").addEventListener("click",closeCsvDialog);byId("csvNextButton").addEventListener("click",csvNext);byId("csvBackButton").addEventListener("click",()=>setCsvStep(csvState.step-1));
+    byId("csvDialog").addEventListener("click",event=>{if(event.target===byId("csvDialog"))closeCsvDialog();});
+    byId("backupButton").addEventListener("click",downloadBackup);byId("restoreFile").addEventListener("change",event=>restoreBackup(event.target.files[0]));
+    byId("sampleButton").addEventListener("click",insertSampleData);byId("clearButton").addEventListener("click",clearAllData);
+  }
+  function renderAll(){updateDateLabel();renderSupplierFilter();renderStock();renderOrders();renderHistory();renderMaster();}
+  function revealCurrentNavOnMobile() {
+    if (!window.matchMedia("(max-width: 800px)").matches) return;
+    const currentNav=document.querySelector(".nav.on");
+    if (currentNav) currentNav.scrollIntoView({inline:"center",block:"nearest"});
+  }
+
+  // ---- 検収用フック（画面と本番動作には影響しない） ----
+  window.__test__ = Object.freeze({
+    getBackupJSON:()=>backupJson(),
+    getOrderText:supplier=>buildOrderText(supplier),
+    getLastCopiedText:()=>lastCopiedText
+  });
+
+  // ---- 起動（破損時は白紙へ戻す） ----
+  renderSidebar();
+  registerEvents();
+  try { appData=loadData();renderAll(); }
+  catch(error){
+    appData=makeEmptyData();
+    renderAll();
+    try { saveData();showNotice("保存データが壊れていたため、白紙で起動しました。バックアップがある場合は読み込んでください。",true); }
+    catch(fallbackError){showNotice("この環境ではデータを保存できません。画面はそのままご利用いただけます。",true);}
+  }
+  revealCurrentNavOnMobile();
+})();
+</script>
+</body>
+</html>

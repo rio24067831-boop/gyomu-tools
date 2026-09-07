@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>まっさらにする｜業務ツール</title>
+<style>
+  :root{
+    --bg:#f4f6f7; --card:#fff; --line:#e3e6e9; --line2:#eef0f2;
+    --text:#1b2126; --sub:#6b737b; --accent:#1f6f6b; --accent-bg:#e6f2f1;
+    --warn:#b4452a; --warn-bg:#fff7f4; --warn-line:#f3cfc3;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);
+    font-family:"Hiragino Sans","Hiragino Kaku Gothic ProN","Yu Gothic","Noto Sans JP",sans-serif;
+    font-size:14px;line-height:1.7;-webkit-font-smoothing:antialiased}
+  .wrap{display:flex;min-height:100vh}
+  .side{width:232px;flex:none;background:var(--card);border-right:1px solid var(--line);
+    padding:20px 0 16px;display:flex;flex-direction:column}
+  .side h2{font-family:"Hiragino Mincho ProN","Yu Mincho","Noto Serif JP",serif;
+    font-size:18px;letter-spacing:.06em;margin:0 20px 14px;font-weight:600}
+  .side a{display:block;padding:8px 20px;color:var(--text);text-decoration:none;font-size:13px}
+  .side a:hover{background:var(--line2)}
+  .side a .n{color:var(--sub);font-size:11px;margin-right:8px;font-variant-numeric:tabular-nums}
+  .side .here{background:var(--accent-bg);color:var(--accent);font-weight:600}
+  .side .note{margin:auto 20px 0;padding-top:16px;color:var(--sub);font-size:11px;line-height:1.6}
+  .main{flex:1;padding:28px 32px 60px;max-width:900px}
+  .eyebrow{color:var(--sub);font-size:12px}
+  h1{font-family:"Hiragino Mincho ProN","Yu Mincho","Noto Serif JP",serif;
+    font-size:30px;letter-spacing:.06em;margin:4px 0 18px;font-weight:600}
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:20px 22px;margin-bottom:18px}
+  .panel h3{font-size:15px;margin:0 0 10px}
+  .lead{color:var(--sub);margin:0 0 16px}
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  th,td{text-align:left;padding:9px 8px;border-bottom:1px solid var(--line2)}
+  th{color:var(--sub);font-size:12px;font-weight:600}
+  td.num{text-align:right;font-variant-numeric:tabular-nums;color:var(--sub);font-size:13px}
+  .tag{display:inline-block;padding:1px 8px;border-radius:999px;font-size:11px;border:1px solid var(--line)}
+  .tag.has{background:var(--warn-bg);border-color:var(--warn-line);color:var(--warn)}
+  .tag.empty{background:var(--accent-bg);border-color:#cfe4e2;color:var(--accent)}
+  .tag.none{color:var(--sub)}
+  button{font:inherit;border-radius:8px;padding:9px 18px;border:1px solid var(--line);
+    background:#fff;color:var(--text);cursor:pointer}
+  button:hover{background:var(--line2)}
+  button.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+  button.primary:hover{filter:brightness(1.08)}
+  button.small{padding:4px 12px;font-size:12px}
+  .result{margin-top:14px;padding:12px 14px;border-radius:8px;font-size:13px;display:none}
+  .result.ok{display:block;background:var(--accent-bg);border:1px solid #cfe4e2;color:var(--accent)}
+  .result.warn{display:block;background:var(--warn-bg);border:1px solid var(--warn-line);color:var(--warn)}
+  ul.steps{margin:8px 0 0;padding-left:20px;color:var(--sub);font-size:13px}
+  @media (max-width:800px){
+    .wrap{display:block}
+    .side{width:auto;border-right:none;border-bottom:1px solid var(--line)}
+    .side a{display:inline-block;padding:6px 12px}
+    .main{padding:20px 16px 40px}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <nav class="side">
+    <h2>業務ツール</h2>
+    <a href="./日報分析.html"><span class="n">01</span>日報分析</a>
+    <a href="./資金繰り表.html"><span class="n">02</span>資金繰り表</a>
+    <a href="./原価管理.html"><span class="n">03</span>原価管理</a>
+    <a href="./月次PL.html"><span class="n">04</span>月次PL</a>
+    <a href="./給与明細作成.html"><span class="n">05</span>給与明細作成</a>
+    <a href="./支払期日管理.html"><span class="n">06</span>支払期日管理</a>
+    <a href="./採用管理.html"><span class="n">07</span>採用管理</a>
+    <a href="./補助金チェッカー.html"><span class="n">08</span>補助金チェッカー</a>
+    <a href="./備品発注リスト.html"><span class="n">09</span>備品発注リスト</a>
+    <a class="here" href="./00_まっさらにする.html"><span class="n">—</span>まっさらにする</a>
+    <div class="note">データはこのパソコンの中にだけ保存されます。ネット通信なし。<br><br>画面バージョン: 2026-09-06</div>
+  </nav>
+
+  <main class="main">
+    <div class="eyebrow">業務ツール ／ 保守用</div>
+    <h1>まっさらにする</h1>
+    <p class="lead">9本のツールがこのパソコンに保存している内容を、まとめて消します。消すのはこのブラウザの中の保存データだけで、元のCSVやテキストのファイルには手を触れません。</p>
+
+    <div class="panel">
+      <h3>いま入っているもの</h3>
+      <table>
+        <thead><tr><th>ツール</th><th>状態</th><th class="num">大きさ</th><th style="width:96px"></th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+      <div style="margin-top:18px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <button class="primary" id="clearAll">全部まっさらにする</button>
+        <button id="rescan">調べ直す</button>
+        <span style="color:var(--sub);font-size:12px">消したあとは各ツールを開き直してください。</span>
+      </div>
+      <label style="display:block;margin-top:14px;color:var(--sub);font-size:13px">
+        <input type="checkbox" id="wipeSettings"> 店名などの<strong>設定も消す</strong>（既定は残します。消すと納品時の初期設定からやり直しになります）
+      </label>
+      <div class="result" id="result"></div>
+    </div>
+
+    <div class="panel">
+      <h3>ここに「保存なし」しか出ないときは</h3>
+      <p class="lead" style="margin:0">ブラウザによっては、ファイルを直接開いた画面どうしで保存場所が分かれることがあります。そのときは各ツールを開いて、画面右上の<strong>「白紙に戻す」「初期化」</strong>を押してください。1本ずつ確実に空になります。</p>
+      <ul class="steps">
+        <li>支払期日管理・補助金チェッカーの2本は、そもそも保存しません（開くたび空から始まります）</li>
+        <li>「見本データを入れる」を押すと、また見本が入ります</li>
+      </ul>
+    </div>
+  </main>
+</div>
+
+<script>
+(function(){
+  // 9本のツールが使う保存名。前方一致で拾うので、古い版の残りも一緒に消える。
+  var TOOLS = [
+    {name:'01 日報分析',        prefixes:['nippoBunseki']},
+    {name:'02 資金繰り表',      prefixes:['cashflow-sheet']},
+    {name:'03 原価管理',        prefixes:['freesia-cost-']},
+    {name:'04 月次PL',          prefixes:['freesia-pl-']},
+    {name:'05 給与明細作成',    prefixes:['freesia_payslip']},
+    {name:'06 支払期日管理',    prefixes:[], stateless:true},
+    {name:'07 採用管理',        prefixes:['freesia_hiring']},
+    {name:'08 補助金チェッカー',prefixes:[], stateless:true},
+    {name:'09 備品発注リスト',  prefixes:['freesia-supply-order']}
+  ];
+
+  function allKeys(){
+    var out=[];
+    try{ for(var i=0;i<localStorage.length;i++) out.push(localStorage.key(i)); }catch(e){}
+    return out;
+  }
+  // 「設定」にあたる保存名。既定では消さない（納品時の初期設定をやり直さずに済むように）。
+  var SETTING_KEYS = [
+    'nippoBunsekiSettingsV3',                    // 01 店名・呼び方・週報の文言
+    'nippoBunsekiStaffStoresV3',                 // 01 スタッフの所属店（2026-09-06追加）
+    'freesia_payslip_employee_csv_mapping_v1'    // 05 従業員CSVの列の対応づけ
+  ];
+
+  function wipeSettings(){
+    var el=document.getElementById('wipeSettings');
+    return !!(el && el.checked);
+  }
+  function keysFor(tool, keys){
+    if(!tool.prefixes.length) return [];
+    var keep = wipeSettings() ? [] : SETTING_KEYS;
+    return keys.filter(function(k){
+      if(keep.indexOf(k)>=0) return false;
+      return tool.prefixes.some(function(p){ return k.indexOf(p)===0; });
+    });
+  }
+  function size(keys){
+    var n=0;
+    keys.forEach(function(k){ try{ n += (localStorage.getItem(k)||'').length; }catch(e){} });
+    return n;
+  }
+  function fmt(n){
+    if(n<1024) return n+' 文字';
+    return Math.round(n/1024).toLocaleString('ja-JP')+' KB';
+  }
+
+  var rowsEl=document.getElementById('rows');
+  var resultEl=document.getElementById('result');
+
+  function render(){
+    var keys=allKeys();
+    rowsEl.innerHTML='';
+    TOOLS.forEach(function(tool){
+      var mine=keysFor(tool,keys);
+      var tr=document.createElement('tr');
+
+      var td1=document.createElement('td'); td1.textContent=tool.name;
+
+      var td2=document.createElement('td');
+      var tag=document.createElement('span'); tag.className='tag';
+      if(tool.stateless){ tag.className+=' none'; tag.textContent='保存なし（開くたび空）'; }
+      else if(mine.length){ tag.className+=' has'; tag.textContent='入力あり'; }
+      else { tag.className+=' empty'; tag.textContent='まっさら'; }
+      td2.appendChild(tag);
+
+      var td3=document.createElement('td'); td3.className='num';
+      td3.textContent = (tool.stateless || !mine.length) ? '—' : fmt(size(mine));
+
+      var td4=document.createElement('td');
+      if(mine.length){
+        var b=document.createElement('button'); b.className='small'; b.textContent='これだけ消す';
+        b.onclick=function(){
+          mine.forEach(function(k){ try{ localStorage.removeItem(k); }catch(e){} });
+          say('ok', tool.name+' を空にしました。');
+          render();
+        };
+        td4.appendChild(b);
+      }
+
+      tr.appendChild(td1);tr.appendChild(td2);tr.appendChild(td3);tr.appendChild(td4);
+      rowsEl.appendChild(tr);
+    });
+  }
+
+  function say(kind, msg){
+    resultEl.className='result '+kind;
+    resultEl.textContent=msg;
+  }
+
+  document.getElementById('clearAll').onclick=function(){
+    var keys=allKeys(), target=[];
+    TOOLS.forEach(function(t){ target=target.concat(keysFor(t,keys)); });
+    if(!target.length){ say('ok','消すものはありませんでした。9本ともまっさらです。'); render(); return; }
+    var tail = wipeSettings() ? '\n※ 店名などの設定も一緒に消します。' : '\n※ 店名などの設定は残します。';
+    if(!confirm('9本のツールの入力内容を全部消します。よろしいですか？\n（消えるのはこのパソコンの保存分だけ。CSVなどの元ファイルは消えません）'+tail)) return;
+    target.forEach(function(k){ try{ localStorage.removeItem(k); }catch(e){} });
+    say('ok', target.length+'件を消しました。9本ともまっさらです。各ツールを開き直してください。');
+    render();
+  };
+
+  document.getElementById('rescan').onclick=function(){ render(); say('ok','調べ直しました。'); };
+  document.getElementById('wipeSettings').onchange=function(){ render(); };
+
+  render();
+})();
+</script>
+</body>
+</html>

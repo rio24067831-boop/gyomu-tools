@@ -1,0 +1,258 @@
+<!doctype html>
+<!--
+  支払期日管理: 飲食店の支払先、月ごとの予定、支払済み状態を一つの画面で管理するファイルです。
+  主な機能: 支払先マスター、月別予定、前々日通知付きカレンダー、資金繰り用JSON、
+  CSV・貼り付け一括取り込み、完全バックアップの書き出しと復元。
+  データの流れ: 画面・ファイル入力 → 検証 → ブラウザ内保存 → 画面表示・ファイル出力。
+  データはブラウザの localStorage だけに保存し、外部送信・外部通信は一切行いません。
+-->
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>支払期日管理</title>
+<style>
+:root{--bg:#f4f6f7;--side:#fff;--card:#fff;--line:#e3e6e9;--row:#eef0f2;--ink:#1b2126;--muted:#6b737b;--accent:#1f6f6b;--accent-soft:#e6f2f1;--warn:#b4452a;--warn-soft:#fff7f4;--warn-line:#f3cfc3}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:"Hiragino Sans","Hiragino Kaku Gothic ProN","Yu Gothic","Noto Sans JP",sans-serif;-webkit-font-smoothing:antialiased;font-variant-numeric:tabular-nums}.serif,h1,h2,.tile .v{font-family:"Hiragino Mincho ProN","Yu Mincho","Noto Serif JP",serif;letter-spacing:.06em}.app{display:flex;min-height:100vh}.side{width:232px;flex:0 0 232px;background:var(--side);border-right:1px solid var(--line);padding:26px 14px;display:flex;flex-direction:column;gap:4px}.brand{padding:0 12px 18px;font-size:11px;letter-spacing:.22em;color:var(--muted)}#sidebarNav{display:contents}.nav{display:flex;align-items:center;gap:12px;padding:11px 12px;border-radius:8px;color:#3d474f;font-size:14px;text-decoration:none;white-space:nowrap}.nav .no{font-size:11px;color:var(--muted);width:20px;letter-spacing:.05em}.nav.on{background:var(--accent-soft);color:var(--accent);font-weight:700}.nav.on .no{color:var(--accent)}.nav.off{color:#a3aab0;cursor:default}.nav.off .tag{font-size:10px;margin-left:auto}.side .foot{margin-top:auto;padding:12px;font-size:11px;color:var(--muted);line-height:1.6}.main{min-width:0;flex:1;padding:30px 36px;display:flex;flex-direction:column;gap:22px}.head{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap}.head .sub{font-size:12px;color:var(--muted);letter-spacing:.1em}.head h1{margin:6px 0 0;font-size:30px;font-weight:600}.spacer{flex:1}.actions{display:flex;gap:8px;flex-wrap:wrap}.btn{min-height:38px;padding:8px 16px;border-radius:8px;border:1px solid #d9dde1;background:#fff;color:var(--ink);font:inherit;font-size:13px;font-weight:600;cursor:pointer}.btn:hover{border-color:var(--accent)}.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:700}.btn.danger{color:var(--warn)}.btn.small{min-height:30px;padding:5px 10px;font-size:12px}.tiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}.tile{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px 20px;display:flex;flex-direction:column;gap:6px}.tile .k{font-size:11px;color:var(--muted);letter-spacing:.12em}.tile .v{font-size:42px;line-height:1.05}.tile .v small{font:16px "Hiragino Sans","Yu Gothic",sans-serif;margin-left:6px;color:var(--muted)}.tile.warn{background:var(--warn-soft);border-color:var(--warn-line)}.tile.warn .k,.tile.warn .v,.tile.warn small{color:var(--warn)}.panel{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden}.panel .bar{display:flex;align-items:center;gap:12px;padding:14px 18px;border-bottom:1px solid var(--line);flex-wrap:wrap}.panel .bar h2{margin:0;font-size:18px;font-weight:600}.month-control{display:flex;align-items:center;gap:8px}.month-title{min-width:110px;text-align:center;font-weight:700}.muted,.hint{color:var(--muted);font-size:12px}.notice{display:none;padding:12px 16px;border:1px solid var(--line);border-radius:8px;background:#fff;font-size:13px}.notice.show{display:block}.notice.error{color:var(--warn);background:var(--warn-soft);border-color:var(--warn-line)}.notice.ok{color:var(--accent);background:var(--accent-soft)}.table-wrap{overflow-x:auto}table{border-collapse:collapse;width:100%;min-width:860px}th{font-size:11px;font-weight:600;color:var(--muted);text-align:left;padding:10px 14px;border-bottom:1px solid var(--line);letter-spacing:.08em;white-space:nowrap}td{padding:12px 14px;border-bottom:1px solid var(--row);font-size:14px;vertical-align:middle}tr:last-child td{border-bottom:0}tr.urgent td{background:var(--warn-soft);color:var(--warn)}tr.done td{color:var(--muted);text-decoration:line-through}.r{text-align:right}.amount-input{width:120px;text-align:right}.badge{display:inline-block;padding:3px 7px;border-radius:99px;background:var(--accent-soft);color:var(--accent);font-size:11px;font-weight:700}.badge.estimate{background:var(--warn-soft);color:var(--warn);border:1px solid var(--warn-line)}input,select,textarea{width:100%;border:1px solid #d9dde1;border-radius:8px;background:#fff;color:var(--ink);font:inherit;font-size:14px;padding:9px 10px}input:focus,select:focus,textarea:focus{outline:2px solid var(--accent-soft);border-color:var(--accent)}input[type=checkbox]{width:18px;height:18px;accent-color:var(--accent)}.empty{padding:28px;text-align:center;color:var(--muted)}.master-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;padding:16px}.field{display:flex;flex-direction:column;gap:5px}.field label{font-size:12px;color:var(--muted);font-weight:600}.field.wide{grid-column:span 2}.master-list{padding:0 16px 16px}.master-card{display:grid;grid-template-columns:1.6fr 1fr 1fr 1fr auto;gap:10px;align-items:center;padding:11px 0;border-bottom:1px solid var(--row);font-size:13px}.master-card:last-child{border-bottom:0}.import-area{display:grid;grid-template-columns:1fr 1fr;gap:16px;padding:16px}.import-area textarea{min-height:150px;resize:vertical}.mapping{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;padding:0 16px 16px}.preview{padding:0 16px 16px}.preview-line{padding:7px 9px;border-bottom:1px solid var(--row);font-size:12px}.preview-line.error{color:var(--warn);background:var(--warn-soft)}.section-help{padding:0 18px 14px;color:var(--muted);font-size:12px;line-height:1.7}.hidden{display:none!important}.file-label{display:inline-flex;align-items:center}.file-label input{display:none}dialog{width:min(680px,calc(100% - 24px));border:1px solid var(--line);border-radius:12px;padding:0;background:#fff;color:var(--ink)}dialog::backdrop{background:rgba(27,33,38,.35)}.dialog-head{padding:16px 18px;border-bottom:1px solid var(--line);display:flex;align-items:center}.dialog-head h2{margin:0;font-size:18px}.dialog-body{padding:18px}.dialog-actions{padding:14px 18px;border-top:1px solid var(--line);display:flex;justify-content:flex-end;gap:8px}.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.form-grid .wide{grid-column:1/-1}.day-fields{display:flex;gap:8px}.day-fields>*{flex:1}.check-label{display:flex;align-items:center;gap:8px;font-size:13px}.check-label input{width:18px}.screen-only{}@media(max-width:1100px){.master-card{grid-template-columns:1.5fr 1fr 1fr auto}.master-card .memo{display:none}}@media(max-width:800px){.app{flex-direction:column}.side{width:auto;flex:0 0 auto;flex-direction:row;flex-wrap:nowrap;padding:10px;overflow-x:auto;border-right:0;border-bottom:1px solid var(--line)}.side .foot,.brand{display:none}.nav{padding:9px}.nav .tag{display:none}.main{padding:18px;gap:16px}.tiles{grid-template-columns:repeat(2,minmax(0,1fr))}.tile{padding:14px}.tile .v{font-size:34px}.head{align-items:flex-start}.head .spacer{display:none}.actions{width:100%}.actions .btn,.actions .file-label{flex:1}.master-grid,.import-area{grid-template-columns:1fr}.field.wide{grid-column:auto}.mapping{grid-template-columns:1fr 1fr}.master-card{grid-template-columns:1fr auto}.master-card .secondary{display:none}.form-grid{grid-template-columns:1fr}.form-grid .wide{grid-column:auto}}@media(max-width:430px){.main{padding:12px}.tiles{gap:8px}.tile .v{font-size:29px}.btn{padding:8px 10px}.mapping{grid-template-columns:1fr}}@media print{.side,.actions,.screen-only,#message,.import-panel,.master-actions{display:none!important}.main{padding:0;gap:10px}.tile,.panel{border-color:#000}.tiles{grid-template-columns:repeat(4,1fr)}body{background:#fff}.panel{break-inside:avoid}table{min-width:0;font-size:10px}th,td{padding:5px}}
+tr.overdue td{background:var(--warn-soft);color:var(--warn);font-weight:600}.badge.overdue{background:var(--warn-soft);color:var(--warn);border:1px solid var(--warn-line)}.overdue-notice{padding:10px 18px;color:var(--warn);background:var(--warn-soft);border-bottom:1px solid var(--warn-line);font-size:13px;font-weight:700}
+</style>
+</head>
+<body>
+<div class="app">
+<aside class="side" aria-label="業務ツール一覧">
+  <div class="brand">業務ツール</div>
+  <nav id="sidebarNav"></nav>
+  <div class="foot">データはこのパソコンの中にだけ保存されます。ネット通信なし。<br>画面バージョン: 2026-09-06</div>
+</aside>
+<main class="main">
+  <header class="head">
+    <div><div class="sub" id="updatedLabel">店舗 ・ 更新日</div><h1>支払期日管理</h1></div><div class="spacer"></div>
+    <div class="actions screen-only">
+      <button class="btn" id="icsButton">カレンダー</button><button class="btn" id="paymentsButton">資金繰り用</button>
+      <button class="btn" id="backupButton">バックアップ</button><label class="btn file-label">読み込み<input id="backupInput" type="file" accept="application/json,.json"></label>
+      <button class="btn primary" id="addButton">支払先を追加</button>
+    </div>
+  </header>
+  <div id="message" class="notice" role="status"></div>
+  <section class="tiles" aria-label="今月の概要">
+    <div class="tile"><div class="k">今月の支払件数</div><div class="v"><span id="countTile">0</span><small>件</small></div></div>
+    <div class="tile"><div class="k">今月の支払合計</div><div class="v"><span id="totalTile">0</span><small>円</small></div></div>
+    <div class="tile warn"><div class="k">3日以内</div><div class="v"><span id="urgentTile">0</span><small>件</small></div></div>
+    <div class="tile"><div class="k">支払済み</div><div class="v"><span id="doneTile">0</span><small>件</small></div></div>
+  </section>
+  <section class="panel">
+    <div class="bar"><h2>支払予定一覧</h2><div class="spacer"></div><div class="month-control screen-only"><button class="btn small" id="prevMonth">前月</button><span class="month-title" id="monthLabel"></span><button class="btn small" id="nextMonth">翌月</button></div><label class="check-label screen-only"><input id="showDone" type="checkbox">済みも表示</label></div>
+    <div id="overdueNotice" class="overdue-notice hidden"></div>
+    <div class="table-wrap"><table><thead><tr><th>済み</th><th>支払日</th><th>相手</th><th class="r">金額</th><th>科目</th><th>口座</th><th>状態</th></tr></thead><tbody id="scheduleBody"></tbody></table></div>
+    <div id="scheduleEmpty" class="empty hidden">表示する支払予定はありません。</div>
+  </section>
+  <section class="panel">
+    <div class="bar"><h2>支払先マスター</h2><div class="spacer"></div><span class="muted" id="masterCount"></span><button class="btn small screen-only" id="demoButton">見本データを入れる</button><button class="btn small danger screen-only" id="clearButton">白紙に戻す</button></div>
+    <div id="masterList" class="master-list"></div>
+  </section>
+  <section class="panel import-panel">
+    <div class="bar"><h2>一括取り込み</h2><div class="spacer"></div><button class="btn small" id="analyzeImport">列を確認</button></div>
+    <div class="import-area"><div class="field"><label for="csvFile">CSVファイル</label><input id="csvFile" type="file" accept="text/csv,.csv,text/plain"></div><div class="field"><label for="pasteArea">または、表を貼り付け</label><textarea id="pasteArea" placeholder="相手,金額,支払日,区分,口座,メモ&#10;例示青果,45000,25,固定,運営口座,毎月分"></textarea></div></div>
+    <div class="section-help"><label class="check-label"><input id="hasHeader" type="checkbox" checked>1行目を見出しとして扱う</label>「支払日」は 25、月末、第2火曜 のいずれかで入力できます。列の確認後、対応を選んでプレビューしてください。</div>
+    <div id="mappingArea" class="mapping hidden"></div>
+    <div id="previewArea" class="preview hidden"><div id="previewSummary" class="section-help"></div><div id="previewLines"></div><div style="padding-top:12px"><button class="btn" id="previewImport">取り込み前に確認</button> <button class="btn primary hidden" id="executeImport">正常な行を取り込む</button></div></div>
+  </section>
+</main>
+</div>
+
+<dialog id="masterDialog">
+  <form id="masterForm" method="dialog">
+    <div class="dialog-head"><h2 id="dialogTitle">支払先を追加</h2></div>
+    <div class="dialog-body form-grid">
+      <input id="editId" type="hidden">
+      <div class="field wide"><label for="payeeInput">相手</label><input id="payeeInput" required maxlength="80"></div>
+      <div class="field"><label for="amountInput">金額</label><input id="amountInput" required inputmode="decimal" placeholder="45,000"></div>
+      <div class="field"><label for="kindInput">区分</label><select id="kindInput"><option value="fixed">固定</option><option value="variable">変動</option></select></div>
+      <div class="field"><label for="ruleInput">支払日方式</label><select id="ruleInput"><option value="day">毎月○日</option><option value="weekday">第n曜日</option><option value="end">月末</option></select></div>
+      <div class="field day-fields" id="dayFields"><div><label for="dayInput">日</label><input id="dayInput" type="number" min="1" max="31" value="25"></div></div>
+      <div class="field day-fields hidden" id="weekdayFields"><div><label for="weekInput">第何週</label><select id="weekInput"><option value="1">第1</option><option value="2">第2</option><option value="3">第3</option><option value="4">第4</option><option value="5">第5</option></select></div><div><label for="weekdayInput">曜日</label><select id="weekdayInput"><option value="1">月曜</option><option value="2">火曜</option><option value="3">水曜</option><option value="4">木曜</option><option value="5">金曜</option></select></div></div>
+      <div class="field"><label for="accountInput">支払口座</label><input id="accountInput" maxlength="50"></div>
+      <div class="field"><label for="categoryInput">科目</label><select id="categoryInput"><option>家賃</option><option>リース</option><option>仕入</option><option>水道光熱</option><option>通信</option><option selected>その他</option></select></div>
+      <div class="field wide"><label for="memoInput">メモ</label><textarea id="memoInput" maxlength="300"></textarea></div>
+    </div>
+    <div class="dialog-actions"><button class="btn" type="button" id="cancelDialog">やめる</button><button class="btn primary" type="submit">保存</button></div>
+  </form>
+</dialog>
+<script>
+"use strict";
+
+// ---- サイドバー項目一覧（導入済みフラグはここだけ触る） ----
+const SIDEBAR_TOOLS=[
+  {no:"01",name:"日報分析",file:"./日報分析.html",installed:true},
+  {no:"02",name:"資金繰り表",file:"./資金繰り表.html",installed:true},
+  {no:"03",name:"原価管理",file:"./原価管理.html",installed:true},
+  {no:"04",name:"月次PL",file:"./月次PL.html",installed:true},
+  {no:"05",name:"給与明細作成",file:"./給与明細作成.html",installed:true},
+  {no:"06",name:"支払期日管理",file:"./支払期日管理.html",installed:true},
+  {no:"07",name:"採用管理",file:"./採用管理.html",installed:true},
+  {no:"08",name:"補助金チェッカー",file:"./補助金チェッカー.html",installed:true},
+  {no:"09",name:"備品発注リスト",file:"./備品発注リスト.html",installed:true}
+];
+const このツールの番号="06"; // サイドバーで今の画面として強調する項目
+
+// サイドバーを配列から組み立てる（部品はcreateElementのみで作る）
+function サイドバーを描画(){
+  const 置き場=document.getElementById("sidebarNav");
+  if(!置き場)return;
+  置き場.replaceChildren();
+  SIDEBAR_TOOLS.forEach(tool=>{
+    const 番号=document.createElement("span");
+    番号.className="no";番号.textContent=tool.no;
+    let 項目;
+    if(tool.installed){
+      項目=document.createElement("a");
+      項目.href=tool.file;
+      項目.className=tool.no===このツールの番号?"nav on":"nav";
+      項目.append(番号,document.createTextNode(tool.name));
+    }else{
+      項目=document.createElement("span");
+      項目.className="nav off";
+      const 札=document.createElement("span");
+      札.className="tag";札.textContent="未導入";
+      項目.append(番号,document.createTextNode(tool.name),札);
+    }
+    置き場.append(項目);
+  });
+}
+
+// ---- 基本設定と見本データ ----
+const 保存キー="freesia-payment-manager-v1";
+const バックアップ形式="freesia-payment-manager-backup";
+const 金額上限=1000000000; // 誤入力を防ぎつつ、店舗支払として十分な上限（10億円）
+const 科目一覧=["家賃","リース","仕入","水道光熱","通信","その他"];
+const 曜日名=["日","月","火","水","木","金","土"];
+const 見本名称=["あおば青果","みなもと鮮魚","あおば青果","しろかね米穀","つばき調味料","かえで乾物","ひなた豆腐","みどり製麺","さざなみ厨房設備","こまち店舗賃貸","はるかぜ空調保守","あかつき冷蔵機器","なごみ食器","すずらん清掃","あおぞら廃棄物","つむぎ制服","かすみ防虫管理","ひかり電力サービス","しずく水道管理","そよかぜガス供給","やまぶき通信","わかば予約端末","うぐいす会計支援","ほたる警備","くるみ駐車場","つばさ配送","こはく厨房リース","もみじ店舗保険","つきみ農園","しおさい漁業組合","あさひ酒販","ゆうなぎ飲料","たんぽぽ製菓","ききょう乳業","ふたば鶏卵","りんどう香辛料","ひいらぎ包装資材","すみれ消耗品","なのはな販促","せせらぎ臨時仕入"];
+const 見本金額=[42000,158000,136000,78000,36000,29000,24000,48000,68000,280000,22000,34000,18000,26000,31000,15000,12000,97000,24000,65000,19000,14000,33000,28000,44000,52000,59000,38000,76000,184000,126000,88000,45000,57000,64000,23000,39000,27000,35000,92000];
+function 見本データを作る(){
+  const masters=見本名称.map((payee,index)=>{const fixed=index<28;const type=index%7===5?"end":index%7===4?"weekday":"day";const day=index===0||index===2?31:index===1?30:5+(index*4)%25;return{id:"sample-"+(index+1),masterId:"p_"+String(index+1).padStart(4,"0"),payee,amount:index===2?見本金額[0]:見本金額[index],kind:fixed?"fixed":"variable",rule:{type,day,week:1+(index%4),weekday:1+(index%5)},account:index%3===0?"運営口座":index%3===1?"仕入口座":"経費口座",category:index===2?科目一覧[0]:科目一覧[index%科目一覧.length],memo:"架空の見本データ"}});
+  return{format:バックアップ形式,version:1,masters,overrides:{},done:{},updatedAt:new Date().toISOString()};
+}
+function 空データを作る(){return{format:バックアップ形式,version:1,masters:[],overrides:{},done:{},updatedAt:new Date().toISOString()}} // 初回起動は空（見本はボタンで任意投入・2026-09-06）
+let 保存データ=空データを作る();
+let 保存領域を使える=true;
+let 表示月=月キー(new Date());
+let 取込表=[];
+let 取込結果=[];
+
+// ---- 日付と金額の共通処理 ----
+function 全角を半角(value){return String(value).replace(/[０-９]/g,ch=>String.fromCharCode(ch.charCodeAt(0)-65248)).replace(/，/g,",").replace(/[−ー―‐]/g,"-").replace(/￥/g,"¥").trim()}
+function 金額を読む(value){
+  let text=全角を半角(value).replace(/\s*円$/,"").replace(/[¥￥\s,]/g,"");let negative=false;
+  if(/^\(.+\)$/.test(text)){negative=true;text=text.slice(1,-1)}
+  if(/^[▲△-]/.test(text)){negative=true;text=text.slice(1)}
+  if(!/^\d+(?:\.\d+)?$/.test(text))return null;
+  const amount=Number(text)*(negative?-1:1);return Number.isSafeInteger(amount)&&Math.abs(amount)<=金額上限?amount:null;
+}
+function 金額表示(value){return Number(value).toLocaleString("ja-JP")}
+function 月キー(date){return date.getFullYear()+"-"+String(date.getMonth()+1).padStart(2,"0")}
+function 月を移動(key,offset){const [year,month]=key.split("-").map(Number);return 月キー(new Date(year,month-1+offset,1))}
+function 月の日数(year,month){return new Date(year,month,0).getDate()}
+function 実在日付(dateText){if(!/^\d{4}-\d{2}-\d{2}$/.test(dateText))return false;const [y,m,d]=dateText.split("-").map(Number);const date=new Date(y,m-1,d);return date.getFullYear()===y&&date.getMonth()===m-1&&date.getDate()===d}
+function 実在月(monthText){if(!/^\d{4}-\d{2}$/.test(monthText))return false;const [year,month]=monthText.split("-").map(Number);return year>=2000&&year<=2100&&month>=1&&month<=12}
+function 支払日を求める(master,key){
+  const [year,month]=key.split("-").map(Number);let day;
+  if(master.rule.type==="end")day=月の日数(year,month);
+  else if(master.rule.type==="weekday"){const first=new Date(year,month-1,1);day=1+((master.rule.weekday-first.getDay()+7)%7)+(master.rule.week-1)*7;if(day>月の日数(year,month))day-=7}
+  else day=master.rule.day>=29?月の日数(year,month):master.rule.day; // 29〜31日払いは月末扱い（.ics の BYMONTHDAY=-1 と同じ規則・出荷判定第6回 R10）
+  return key+"-"+String(day).padStart(2,"0");
+}
+function 今日からの日数(dateText){const today=new Date();const start=new Date(today.getFullYear(),today.getMonth(),today.getDate());const [y,m,d]=dateText.split("-").map(Number);return Math.round((new Date(y,m-1,d)-start)/86400000)}
+function 予定識別子(month,id){return month+"|"+id}
+
+// ---- 保存データの検証と復元 ----
+function マスターを検証(item){
+  if(!item||typeof item!=="object")return false;
+  if(typeof item.id!=="string"||!item.id||item.id.includes("|")||typeof item.masterId!=="string"||!/^p_[a-z0-9]+$/i.test(item.masterId)||typeof item.payee!=="string"||!item.payee.trim()||item.payee.length>80)return false;
+  if(!Number.isSafeInteger(item.amount)||Math.abs(item.amount)>金額上限)return false;
+  if(!["fixed","variable"].includes(item.kind)||!item.rule||!["day","weekday","end"].includes(item.rule.type))return false;
+  if(item.rule.type==="day"&&(!Number.isInteger(item.rule.day)||item.rule.day<1||item.rule.day>31))return false;
+  if(item.rule.type==="weekday"&&(!Number.isInteger(item.rule.week)||item.rule.week<1||item.rule.week>5||!Number.isInteger(item.rule.weekday)||item.rule.weekday<1||item.rule.weekday>5))return false;
+  return typeof item.account==="string"&&item.account.length<=50&&科目一覧.includes(item.category)&&typeof item.memo==="string"&&item.memo.length<=300;
+}
+function 保存全体を検証(data){
+  if(!data||data.format!==バックアップ形式||data.version!==1||!Array.isArray(data.masters)||typeof data.overrides!=="object"||data.overrides===null||typeof data.done!=="object"||data.done===null)return false;
+  if(!data.masters.every(マスターを検証)||new Set(data.masters.map(x=>x.id)).size!==data.masters.length||new Set(data.masters.map(x=>x.masterId)).size!==data.masters.length)return false;
+  for(const [key,value] of Object.entries(data.overrides)){const parts=key.split("|");if(parts.length!==2||!実在月(parts[0])||!parts[1]||!Number.isSafeInteger(value)||Math.abs(value)>金額上限)return false}
+  for(const [key,value] of Object.entries(data.done)){const parts=key.split("|");if(parts.length!==2||!実在月(parts[0])||!parts[1]||typeof value!=="boolean")return false}
+  return typeof data.updatedAt==="string"&&!Number.isNaN(Date.parse(data.updatedAt));
+}
+function 保存する(){保存データ.updatedAt=new Date().toISOString();if(保存領域を使える){try{localStorage.setItem(保存キー,JSON.stringify(保存データ))}catch(error){保存領域を使える=false}}更新日を描画()}
+function 旧データに安定IDを補う(data){if(data&&Array.isArray(data.masters)){const used=new Set(data.masters.map(x=>x.masterId).filter(Boolean));data.masters.forEach((master,index)=>{if(!master.masterId){let number=index+1;while(used.has("p_"+String(number).padStart(4,"0")))number+=1;master.masterId="p_"+String(number).padStart(4,"0");used.add(master.masterId)}})}return data}
+function 起動データを読む(){let raw;try{raw=localStorage.getItem(保存キー)}catch(error){保存領域を使える=false;return 空データを作る()}if(raw===null)return 空データを作る();const parsed=旧データに安定IDを補う(JSON.parse(raw));if(!保存全体を検証(parsed))throw new Error("保存データの内容が正しくありません。");return parsed}
+function 初期状態へ戻す(message){保存データ=空データを作る();保存する();通知(message+" 白紙で起動しました。バックアップがあれば右上の「読み込み」で復元できます。",true)}
+
+// ---- 月別予定の展開 ----
+function 前月見込み額(master,month){let cursor=月を移動(month,-1);for(let i=0;i<24;i+=1){const key=予定識別子(cursor,master.id);if(Object.prototype.hasOwnProperty.call(保存データ.overrides,key))return 保存データ.overrides[key];cursor=月を移動(cursor,-1)}return master.amount}
+function 予定を作る(month){
+  const current=月キー(new Date());return 保存データ.masters.map(master=>{const key=予定識別子(month,master.id);const hasOverride=Object.prototype.hasOwnProperty.call(保存データ.overrides,key);const futureVariable=master.kind==="variable"&&month>current&&!hasOverride;const amount=hasOverride?保存データ.overrides[key]:(futureVariable?前月見込み額(master,month):master.amount);const date=支払日を求める(master,month);const done=保存データ.done[key]===true;const days=今日からの日数(date);return{id:key,masterId:master.masterId,date,payee:master.payee,amount,category:master.category,fixed:master.kind==="fixed",account:master.account,memo:master.memo,estimated:futureVariable,done,overdue:!done&&days<0,urgent:!done&&days>=0&&days<=3,ruleType:master.rule.type,ruleDay:master.rule.day}}).sort((a,b)=>a.date.localeCompare(b.date)||a.payee.localeCompare(b.payee,"ja"));
+}
+function 表示順にする(items){return items.slice().sort((a,b)=>{if(a.overdue!==b.overdue)return a.overdue?-1:1;if(a.urgent!==b.urgent)return a.urgent?-1:1;return a.date.localeCompare(b.date)||a.payee.localeCompare(b.payee,"ja")})}
+
+// ---- 安全な画面部品 ----
+function 要素(tag,className,textValue){const element=document.createElement(tag);if(className)element.className=className;if(textValue!==undefined)element.textContent=textValue;return element}
+function 通知(message,isError=false){const box=document.getElementById("message");if(!保存領域を使える){box.textContent="この開き方ではデータを保存できません。画面は使えますが、閉じると入力が消えます。";box.className="notice show error";return}box.textContent=message;box.className="notice show "+(isError?"error":"ok")}
+function 更新日を描画(){const date=new Date(保存データ.updatedAt);document.getElementById("updatedLabel").textContent="店舗 ・ "+(date.getMonth()+1)+"/"+date.getDate()+" 更新"}
+function 予定を描画(){
+  const all=予定を作る(表示月);const showDone=document.getElementById("showDone").checked;const visible=表示順にする(all.filter(item=>showDone||!item.done));const body=document.getElementById("scheduleBody");body.replaceChildren();
+  visible.forEach(item=>{const row=要素("tr",item.done?"done":item.overdue?"overdue":item.urgent?"urgent":"");
+    const checkCell=要素("td");const check=要素("input");check.type="checkbox";check.checked=item.done;check.setAttribute("aria-label",item.payee+"を支払済みにする");check.addEventListener("change",()=>{保存データ.done[item.id]=check.checked;保存する();全体を描画()});checkCell.append(check);row.append(checkCell,要素("td","num",item.date.slice(5).replace("-","/")),要素("td","",item.payee));
+    const amountCell=要素("td","r");if(item.estimated){const input=要素("input","amount-input");input.inputMode="decimal";input.placeholder=金額表示(item.amount);input.setAttribute("aria-label",item.payee+"の確定金額");input.addEventListener("change",()=>{if(!input.value.trim())return;const value=金額を読む(input.value);if(value===null){通知("金額を確認してください。例: 45,000",true);input.value="";return}保存データ.overrides[item.id]=value;保存する();全体を描画();通知(item.payee+"の金額を確定しました。");});amountCell.append(input)}else amountCell.textContent=金額表示(item.amount)+"円";
+    row.append(amountCell,要素("td","",item.category),要素("td","",item.account));const stateCell=要素("td");stateCell.append(要素("span",item.overdue?"badge overdue":item.estimated?"badge estimate":"badge",item.overdue?"期日超過":item.estimated?"見込み":(item.fixed?"固定":"確定")));row.append(stateCell);body.append(row)
+  });
+  const overdueCount=all.filter(item=>item.overdue).length;const overdueNotice=document.getElementById("overdueNotice");overdueNotice.textContent="期日を過ぎた未払いが"+overdueCount+"件あります";overdueNotice.classList.toggle("hidden",overdueCount===0);document.getElementById("scheduleEmpty").classList.toggle("hidden",visible.length>0);document.getElementById("monthLabel").textContent=表示月.replace("-","年")+"月";
+  const currentItems=予定を作る(月キー(new Date()));document.getElementById("countTile").textContent=String(currentItems.length);document.getElementById("totalTile").textContent=金額表示(currentItems.reduce((sum,x)=>sum+x.amount,0));document.getElementById("urgentTile").textContent=String(currentItems.filter(x=>{const days=今日からの日数(x.date);return !x.done&&days>=0&&days<=3}).length);document.getElementById("doneTile").textContent=String(currentItems.filter(x=>x.done).length)
+}
+function マスターを描画(){const list=document.getElementById("masterList");list.replaceChildren();document.getElementById("masterCount").textContent=保存データ.masters.length+"件（固定 "+保存データ.masters.filter(x=>x.kind==="fixed").length+"件・変動 "+保存データ.masters.filter(x=>x.kind==="variable").length+"件）";
+  保存データ.masters.forEach(master=>{const card=要素("div","master-card");const name=要素("div");name.append(要素("strong","",master.payee),document.createTextNode(" "),要素("span","badge",master.kind==="fixed"?"固定":"変動"));const rule=master.rule.type==="end"?"月末":master.rule.type==="weekday"?"第"+master.rule.week+曜日名[master.rule.weekday]+"曜":"毎月"+master.rule.day+"日";card.append(name,要素("div","secondary",金額表示(master.amount)+"円"),要素("div","secondary",rule+"・"+master.category),要素("div","memo",master.memo));const actions=要素("div","master-actions");const edit=要素("button","btn small","編集");edit.type="button";edit.addEventListener("click",()=>編集画面を開く(master));const remove=要素("button","btn small danger","削除");remove.type="button";remove.addEventListener("click",()=>削除する(master));actions.append(edit,remove);card.append(actions);list.append(card)})
+}
+function 全体を描画(){更新日を描画();予定を描画();マスターを描画()}
+
+// ---- 支払先の追加・編集・削除 ----
+function 日付欄を切替(){const type=document.getElementById("ruleInput").value;document.getElementById("dayFields").classList.toggle("hidden",type!=="day");document.getElementById("weekdayFields").classList.toggle("hidden",type!=="weekday")}
+function 編集画面を開く(master=null){document.getElementById("dialogTitle").textContent=master?"支払先を編集":"支払先を追加";document.getElementById("editId").value=master?master.id:"";document.getElementById("payeeInput").value=master?master.payee:"";document.getElementById("amountInput").value=master?金額表示(master.amount):"";document.getElementById("kindInput").value=master?master.kind:"fixed";document.getElementById("ruleInput").value=master?master.rule.type:"day";document.getElementById("dayInput").value=master?master.rule.day||25:25;document.getElementById("weekInput").value=master?master.rule.week||1:1;document.getElementById("weekdayInput").value=master?master.rule.weekday||1:1;document.getElementById("accountInput").value=master?master.account:"";document.getElementById("categoryInput").value=master?master.category:"その他";document.getElementById("memoInput").value=master?master.memo:"";日付欄を切替();document.getElementById("masterDialog").showModal()}
+function 新しい安定ID(){const used=new Set(保存データ.masters.map(x=>x.masterId));let number=1;while(used.has("p_"+String(number).padStart(4,"0")))number+=1;return "p_"+String(number).padStart(4,"0")}
+function フォームを保存(event){event.preventDefault();const amount=金額を読む(document.getElementById("amountInput").value);const type=document.getElementById("ruleInput").value;const day=Number(document.getElementById("dayInput").value);const week=Number(document.getElementById("weekInput").value);const weekday=Number(document.getElementById("weekdayInput").value);if(amount===null){通知("金額を正しく入力してください。",true);return}if(type==="day"&&(!Number.isInteger(day)||day<1||day>31)){通知("支払日は1日から31日で入力してください。",true);return}const id=document.getElementById("editId").value||"pay-"+Date.now()+"-"+Math.random().toString(36).slice(2,8);const existing=保存データ.masters.find(x=>x.id===id);const master={id,masterId:existing?existing.masterId:新しい安定ID(),payee:document.getElementById("payeeInput").value.trim(),amount,kind:document.getElementById("kindInput").value,rule:{type,day,week,weekday},account:document.getElementById("accountInput").value.trim(),category:document.getElementById("categoryInput").value,memo:document.getElementById("memoInput").value.trim()};if(!マスターを検証(master)){通知("入力内容を確認してください。",true);return}const index=保存データ.masters.findIndex(x=>x.id===id);if(index>=0)保存データ.masters[index]=master;else 保存データ.masters.push(master);保存する();document.getElementById("masterDialog").close();全体を描画();通知(master.payee+"を保存しました。")}
+function 削除する(master){if(!window.confirm(master.payee+"を削除しますか？\n過去の支払済み記録も一覧に出なくなります。"))return;保存データ.masters=保存データ.masters.filter(x=>x.id!==master.id);for(const key of Object.keys(保存データ.overrides))if(key.endsWith("|"+master.id))delete 保存データ.overrides[key];for(const key of Object.keys(保存データ.done))if(key.endsWith("|"+master.id))delete 保存データ.done[key];保存する();全体を描画();通知(master.payee+"を削除しました。")}
+
+// ---- ファイル書き出しとバックアップ復元 ----
+function ファイルを保存(filename,content,type){const blob=new Blob([content],{type});const url=URL.createObjectURL(blob);const link=document.createElement("a");link.href=url;link.download=filename;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000)}
+function バックアップ文字列(){return JSON.stringify(保存データ,null,2)}
+function 引用符を処理(text){return String(text).replace(/\\/g,"\\\\").replace(/;/g,"\\;").replace(/,/g,"\\,").replace(/\r?\n/g,"\\n")}
+function 日時表記(dateText){return dateText.replaceAll("-","")+"T090000"}
+function 現在日時表記(){const d=new Date();return d.getUTCFullYear()+String(d.getUTCMonth()+1).padStart(2,"0")+String(d.getUTCDate()).padStart(2,"0")+"T"+String(d.getUTCHours()).padStart(2,"0")+String(d.getUTCMinutes()).padStart(2,"0")+String(d.getUTCSeconds()).padStart(2,"0")+"Z"}
+function カレンダー文字列(){const months=[月キー(new Date()),月を移動(月キー(new Date()),1)];const lines=["BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//Freesia//Payment Manager//JA","CALSCALE:GREGORIAN","METHOD:PUBLISH","BEGIN:VTIMEZONE","TZID:Asia/Tokyo","X-LIC-LOCATION:Asia/Tokyo","BEGIN:STANDARD","TZOFFSETFROM:+0900","TZOFFSETTO:+0900","TZNAME:JST","DTSTART:19700101T000000","END:STANDARD","END:VTIMEZONE"];
+  months.flatMap((month,index)=>予定を作る(month).filter(item=>index===0||!item.fixed||item.ruleType==="weekday")).forEach(item=>{const repeats=item.fixed&&(item.ruleType==="day"||item.ruleType==="end");const monthEnd=repeats&&(item.ruleType==="end"||item.ruleDay>=29);const startDate=monthEnd?item.date.slice(0,8)+String(月の日数(Number(item.date.slice(0,4)),Number(item.date.slice(5,7)))).padStart(2,"0"):item.date;lines.push("BEGIN:VEVENT","UID:"+引用符を処理(item.id)+"@freesia.local","DTSTAMP:"+現在日時表記(),"DTSTART;TZID=Asia/Tokyo:"+日時表記(startDate),"DTEND;TZID=Asia/Tokyo:"+startDate.replaceAll("-","")+"T093000","SUMMARY:"+引用符を処理("支払: "+item.payee+" "+金額表示(item.amount)+"円"+(item.estimated?"(見込み)":"")),"DESCRIPTION:"+引用符を処理("科目: "+item.category+" / 口座: "+item.account));if(repeats)lines.push("RRULE:FREQ=MONTHLY;BYMONTHDAY="+(monthEnd?-1:item.ruleDay));else if(item.fixed)lines.push("COMMENT:第n曜日は月により日付が変わるため個別予定");lines.push("BEGIN:VALARM","ACTION:DISPLAY","DESCRIPTION:"+引用符を処理(item.payee+"の支払期限が近づいています"),"TRIGGER:-P2D","END:VALARM","END:VEVENT")});lines.push("END:VCALENDAR");return lines.join("\r\n")+"\r\n"}
+function 資金繰り文字列(){const current=月キー(new Date());const rows=[current,月を移動(current,1)].flatMap(予定を作る).map(item=>({masterId:item.masterId,date:item.date,payee:item.payee,amount:item.amount,category:item.category,fixed:item.fixed}));return JSON.stringify({format:"freesia-payments",version:2,rows},null,2)}
+async function バックアップを読む(file){try{const parsed=旧データに安定IDを補う(JSON.parse(await file.text()));if(!保存全体を検証(parsed))throw new Error("形式または内容が正しくありません。");保存データ=parsed;保存する();全体を描画();通知("バックアップを読み込み、すべてのデータを復元しました。")}catch(error){初期状態へ戻す("バックアップを読み込めませんでした。"+(error.message||""))}finally{document.getElementById("backupInput").value=""}}
+
+// ---- CSV・貼り付けの解析と列対応 ----
+function 区切り行を読む(text,delimiter){const rows=[];let row=[],cell="",quoted=false;for(let i=0;i<text.length;i+=1){const ch=text[i];if(ch==='"'){if(quoted&&text[i+1]==='"'){cell+='"';i+=1}else quoted=!quoted}else if(ch===delimiter&&!quoted){row.push(cell.trim());cell=""}else if((ch==='\n'||ch==='\r')&&!quoted){if(ch==='\r'&&text[i+1]==='\n')i+=1;row.push(cell.trim());if(row.some(value=>value!==""))rows.push(row);row=[];cell=""}else cell+=ch}row.push(cell.trim());if(row.some(value=>value!==""))rows.push(row);return rows}
+function 表を解析(text){const clean=String(text).replace(/^\uFEFF/,"").trim();if(!clean)return[];const first=(clean.split(/\r?\n/,1)[0]||"");const delimiter=first.includes("\t")?"\t":",";return 区切り行を読む(clean,delimiter)}
+function 推測対応(header){const value=header.toLowerCase();if(/相手|支払先|取引先|名称/.test(value))return"payee";if(/金額|支払額/.test(value))return"amount";if(/支払日|期日/.test(value))return"date";if(/区分|固定|変動/.test(value))return"kind";if(/科目|費目|分類/.test(value))return"category";if(/口座/.test(value))return"account";if(/メモ|備考/.test(value))return"memo";return"skip"}
+function 対応欄を作る(){const area=document.getElementById("mappingArea");area.replaceChildren();const count=Math.max(...取込表.map(row=>row.length));const headers=document.getElementById("hasHeader").checked?取込表[0]:[];for(let index=0;index<count;index+=1){const field=要素("div","field");field.append(要素("label","","列"+(index+1)+(headers[index]?"「"+headers[index]+"」":"")));const select=要素("select");select.dataset.column=String(index);[["skip","取り込まない"],["payee","相手"],["amount","金額"],["date","支払日"],["kind","区分"],["category","科目"],["account","口座"],["memo","メモ"]].forEach(([value,label])=>{const option=要素("option","",label);option.value=value;select.append(option)});select.value=推測対応(headers[index]||"");field.append(select);area.append(field)}area.classList.remove("hidden");document.getElementById("previewArea").classList.remove("hidden");document.getElementById("executeImport").classList.add("hidden");document.getElementById("previewLines").replaceChildren();document.getElementById("previewSummary").textContent="列の対応を選び、「取り込み前に確認」を押してください。"}
+function 取込支払日を読む(text){const value=全角を半角(text);if(value==="月末")return{type:"end",day:31,week:1,weekday:1};const dayMatch=value.match(/^(?:毎月)?(\d{1,2})(?:日)?$/);if(dayMatch){const day=Number(dayMatch[1]);return day>=1&&day<=31?{type:"day",day,week:1,weekday:1}:null}const weekMatch=value.match(/^第?([1-5])([月火水木金])曜?(?:日)?$/);if(weekMatch)return{type:"weekday",day:1,week:Number(weekMatch[1]),weekday:"月火水木金".indexOf(weekMatch[2])+1};if(/^\d{4}-\d{2}-\d{2}$/.test(value)&&実在日付(value))return{type:"day",day:Number(value.slice(-2)),week:1,weekday:1};return null}
+function 取込を検証(){const selects=[...document.querySelectorAll("#mappingArea select")];const map={};selects.forEach(select=>{if(select.value!=="skip")map[select.value]=Number(select.dataset.column)});const missing=["payee","amount","date"].filter(key=>map[key]===undefined);if(missing.length){通知("相手・金額・支払日の列をそれぞれ選んでください。",true);return}const rows=取込表.slice(document.getElementById("hasHeader").checked?1:0);取込結果=rows.map((row,index)=>{const line=index+(document.getElementById("hasHeader").checked?2:1);const payee=(row[map.payee]||"").trim();const amount=金額を読む(row[map.amount]||"");const rule=取込支払日を読む(row[map.date]||"");const kindText=(row[map.kind]||"固定").trim();const kind=/変動/.test(kindText)?"variable":/固定/.test(kindText)||!kindText?"fixed":null;const reasons=[];if(!payee)reasons.push("相手が空です");if(payee.length>80)reasons.push("相手が長すぎます");if(amount===null)reasons.push("金額を数字として読めません");if(!rule)reasons.push("支払日が正しくありません");if(!kind)reasons.push("区分は固定か変動で入力してください");const categoryText=map.category===undefined?"":(row[map.category]||"").trim();const category=科目一覧.find(name=>categoryText&&(categoryText===name||categoryText.startsWith(name)||name.startsWith(categoryText)))||"その他";const master=reasons.length?null:{id:"pay-"+Date.now()+"-"+index+"-"+Math.random().toString(36).slice(2,6),payee,amount,kind,rule,account:map.account===undefined?"":(row[map.account]||"").trim().slice(0,50),category,memo:map.memo===undefined?"":(row[map.memo]||"").trim().slice(0,300)};return{line,reasons,master}});プレビューを描画()}
+function プレビューを描画(){const good=取込結果.filter(x=>x.master);const bad=取込結果.filter(x=>!x.master);document.getElementById("previewSummary").textContent="正常 "+good.length+"行・除外 "+bad.length+"行";const lines=document.getElementById("previewLines");lines.replaceChildren();取込結果.forEach(result=>{const text=result.master?result.line+"行目: "+result.master.payee+" / "+金額表示(result.master.amount)+"円":result.line+"行目を除外: "+result.reasons.join("、");lines.append(要素("div","preview-line"+(result.master?"":" error"),text))});document.getElementById("executeImport").classList.toggle("hidden",good.length===0)}
+function 正常行を取り込む(){const good=取込結果.filter(x=>x.master).map(x=>x.master);good.forEach(master=>{master.masterId=新しい安定ID();保存データ.masters.push(master)});保存する();全体を描画();通知(good.length+"行を取り込みました。除外行は追加していません。");取込結果=[];document.getElementById("executeImport").classList.add("hidden")}
+function 一括解析を始める(){try{取込表=表を解析(document.getElementById("pasteArea").value);if(!取込表.length){通知("CSVファイルを選ぶか、表を貼り付けてください。",true);return}対応欄を作る()}catch(error){通知("表を読み取れませんでした。内容を確認してください。",true)}}
+
+// ---- 操作の登録 ----
+document.getElementById("addButton").addEventListener("click",()=>編集画面を開く());document.getElementById("cancelDialog").addEventListener("click",()=>document.getElementById("masterDialog").close());document.getElementById("masterForm").addEventListener("submit",フォームを保存);document.getElementById("ruleInput").addEventListener("change",日付欄を切替);document.getElementById("prevMonth").addEventListener("click",()=>{表示月=月を移動(表示月,-1);予定を描画()});document.getElementById("nextMonth").addEventListener("click",()=>{表示月=月を移動(表示月,1);予定を描画()});document.getElementById("showDone").addEventListener("change",予定を描画);
+document.getElementById("demoButton").addEventListener("click",()=>{if(保存データ.masters.length>0&&!window.confirm("今のデータをすべて消して、見本データ40件（架空）に置き換えます。よろしいですか？"))return;保存データ=見本データを作る();保存する();全体を描画();通知("見本データ40件（架空）を入れました。")});document.getElementById("clearButton").addEventListener("click",()=>{if(!window.confirm("すべての支払先・金額・支払済み記録を消して白紙に戻します。よろしいですか？"))return;保存データ=空データを作る();保存する();全体を描画();通知("白紙に戻しました。")});
+document.getElementById("backupButton").addEventListener("click",()=>ファイルを保存("支払期日管理_バックアップ.json",バックアップ文字列(),"application/json"));document.getElementById("icsButton").addEventListener("click",()=>ファイルを保存("支払予定.ics",カレンダー文字列(),"text/calendar;charset=utf-8"));document.getElementById("paymentsButton").addEventListener("click",()=>ファイルを保存("支払予定_資金繰り用.json",資金繰り文字列(),"application/json"));document.getElementById("backupInput").addEventListener("change",event=>{const file=event.target.files[0];if(file)バックアップを読む(file)});
+document.getElementById("csvFile").addEventListener("change",async event=>{const file=event.target.files[0];if(!file)return;try{document.getElementById("pasteArea").value=await file.text();取込表=表を解析(document.getElementById("pasteArea").value);対応欄を作る()}catch(error){通知("CSVファイルを読み取れませんでした。",true)}});document.getElementById("analyzeImport").addEventListener("click",一括解析を始める);document.getElementById("previewImport").addEventListener("click",取込を検証);document.getElementById("executeImport").addEventListener("click",正常行を取り込む);
+
+// ---- 検収用フック（画面やダウンロードを動かさず内容を返す） ----
+window.__test__={getBackup:バックアップ文字列,getIcs:カレンダー文字列,getPaymentsJson:資金繰り文字列,getSchedule:予定を作る,parseAmount:金額を読む,formatAmount:金額表示,parseImportTable:表を解析,validateImportRows:function(text,mapping,hasHeader=true){取込表=表を解析(text);const fake=[];Object.entries(mapping).forEach(([key,index])=>{const select=document.createElement("select");select.dataset.column=String(index);const option=document.createElement("option");option.value=key;option.textContent=key;select.append(option);select.value=key;fake.push(select)});const area=document.getElementById("mappingArea");area.replaceChildren(...fake);document.getElementById("hasHeader").checked=hasHeader;取込を検証();return 取込結果.map(x=>({line:x.line,ok:Boolean(x.master),reasons:x.reasons,master:x.master}))},validateData:保存全体を検証};
+
+// ---- 安全な起動 ----
+サイドバーを描画(); // データの読み込みに失敗してもサイドバーは出す
+try{保存データ=起動データを読む();全体を描画();if(!保存領域を使える)通知("この開き方ではデータを保存できません。画面は使えますが、閉じると入力が消えます。",true)}catch(error){初期状態へ戻す("保存データが壊れていたため読み込めませんでした。");try{全体を描画()}catch(secondError){document.getElementById("message").textContent="画面を表示できませんでした。ファイルを開き直してください。";document.getElementById("message").className="notice show error"}}
+</script>
+</body>
+</html>
