@@ -205,7 +205,7 @@
     <aside class="side" aria-label="業務ツール">
       <div class="brand">業務ツール</div>
       <nav id="sidebar-nav"></nav>
-      <div class="foot">データはこのパソコンの中にだけ保存されます。<br>ネット通信なし。<br>画面バージョン: 2026-09-06</div>
+      <div class="foot">データはこのパソコンの中にだけ保存されます。<br>ネット通信なし。<br>画面バージョン: 2026-09-07</div>
     </aside>
 
     <main class="main">
@@ -377,6 +377,8 @@
 
     const clone = value => JSON.parse(JSON.stringify(value));
     const formatYen = value => `${Math.round(value).toLocaleString("ja-JP")}円`;
+    // 仕入値は小数のまま表示する（0.95円/gを「1円」と丸めると誤解されるため。最大2桁・末尾0なし。表示のみで保存値・計算は不変）
+    const formatUnitPrice = value => `${value.toLocaleString("ja-JP", { maximumFractionDigits: 2 })}円`;
     const formatRequiredPrice = value => `¥${Math.round(value).toLocaleString("ja-JP")}〜`;
     const formatPercent = value => `${value.toFixed(1)}%`;
     const makeId = prefix => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
@@ -982,10 +984,10 @@
       for (const next of validByName.values()) {
         const existing = existingItems.find(item => item.name.trim() === next.name.trim());
         if (existing) {
-          const before = importKind === "menu" ? `${formatYen(existing.price)}` : `${existing.unit} / ${formatYen(existing.unitPrice)}`;
-          const after = importKind === "menu" ? `${formatYen(next.price)}` : `${next.unit} / ${formatYen(next.unitPrice)}`;
+          const before = importKind === "menu" ? `${formatYen(existing.price)}` : `${existing.unit} / ${formatUnitPrice(existing.unitPrice)}`;
+          const after = importKind === "menu" ? `${formatYen(next.price)}` : `${next.unit} / ${formatUnitPrice(next.unitPrice)}`;
           changes.push({ action: "update", existing, next, before, after });
-        } else changes.push({ action: "add", existing: null, next, before: "—", after: importKind === "menu" ? formatYen(next.price) : `${next.unit} / ${formatYen(next.unitPrice)}` });
+        } else changes.push({ action: "add", existing: null, next, before: "—", after: importKind === "menu" ? formatYen(next.price) : `${next.unit} / ${formatUnitPrice(next.unitPrice)}` });
       }
       return { changes, skipped };
     }
