@@ -27,7 +27,7 @@
   <div class="app">
     <aside class="side">
       <div class="brand">業務ツール</div>
-      <div class="side-foot">データはこのパソコンの中にだけ保存されます。<br>ネット通信なし。<br>画面バージョン: 2026-09-06</div>
+      <div class="side-foot">データはこのパソコンの中にだけ保存されます。<br>連携サーバーを設定したときだけ、取り込みで通信します。<br>画面バージョン: 2026-09-10</div>
     </aside>
     <div class="main-shell">
       <header class="app-header"><div class="head-copy"><div class="eyebrow">全店 ・ 2026/9/5 更新</div><h1>日報分析</h1></div><div class="page-actions"><label class="file-button primary" for="line-files">LINEの履歴を読み込む</label></div></header>
@@ -36,13 +36,15 @@
       <main class="workspace">
     <section id="input-panel" class="tab-panel active">
       <div class="card"><h2>LINEの履歴を読み込む</h2><p class="help">LINEグループで「トーク履歴を送信」して保存した .txt を選びます。複数ファイルもまとめて選べます。同じ通は上書きされます。</p><div class="actions"><label class="file-button primary" for="line-files">LINEの履歴を読み込む</label><input id="line-files" class="file-input" type="file" accept="text/plain,.txt" multiple></div><p id="line-message" class="message" role="status"></p></div>
+      <div class="card" id="renkei-card" hidden><h2>サーバーから取り込む</h2><p class="help">連携サーバーを設定しているときだけ使えます。LINEの日報とSquareの売上を、手元へ取ってくるだけの機能です。こちらから送るものはありません。</p><div class="form-grid"><label>売上を取る期間（開始）<input id="square-from" type="date"></label><label>売上を取る期間（終了）<input id="square-to" type="date"></label></div><div class="actions"><button id="fetch-line" class="primary">LINEの日報を取り込む</button><button id="fetch-square">Squareの売上を取り込む</button></div><p id="renkei-message" class="message" role="status"></p></div>
       <div class="card"><h2>1通を手で追加する</h2><div class="form-grid"><label>店<select id="manual-store"></select></label><label>日付<input id="manual-date" type="date"></label><label>時刻<input id="manual-time" type="time"></label><label>名前<input id="manual-sender" type="text" placeholder="スタッフ名"></label><label class="wide">本文<textarea id="manual-body" placeholder="ここにLINE本文をそのまま貼り付け"></textarea></label></div><div class="actions"><button id="add-manual" class="primary">手入力の日報を保存</button></div><p id="manual-message" class="message" role="status"></p></div>
       <div class="card"><h2>取り込み済みの日報</h2><div id="report-list"></div></div>
       <div class="card"><h2>売上の未取得</h2><p class="help">金額があるのに売上として読めなかった行です。原文を確認してください。</p><div id="unparsed-sales"></div></div>
       <div class="card"><h2>保存データの管理</h2><p class="help">設定と週ごとの商品分析もバックアップに含まれます。</p><div class="actions"><button id="export-backup">バックアップを書き出す</button><label class="file-button" for="backup-file">バックアップを読み込む</label><input id="backup-file" class="file-input" type="file" accept="application/json,.json"><button id="export-sales">資金繰り用に売上を書き出す</button><button id="restore-samples">見本データを入れる</button><button id="clear-all" class="danger">白紙に戻す</button></div><p id="backup-message" class="message" role="status"></p></div>
     </section>
     <section id="summary-panel" class="tab-panel" aria-live="polite"><div class="filters"><div class="control"><label for="week-selection">表示する週</label><select id="week-selection"></select></div><div class="control"><label for="store-selection">表示する店</label><select id="store-selection"></select></div></div><div id="summary-output"></div><div class="card"><h2>週報下書き</h2><p class="help">数値と日報の原文引用だけを自動で入れます。商品分析はこの週だけに保存されます。</p><label for="product-analysis"><b>商品分析（手入力）</b></label><textarea id="product-analysis" placeholder="空欄なら（手入力）と表示"></textarea><label for="weekly-draft"><b>コピー用テキスト</b></label><textarea id="weekly-draft" class="draft" readonly></textarea><div class="actions no-print"><button id="copy-draft" class="primary">下書きをコピー</button></div><p id="copy-message" class="message" role="status"></p></div></section>
-    <section id="settings-panel" class="tab-panel"><div class="card"><h2>設定</h2><p class="help">店名・売上投稿で使う呼び方・週報の文言を保存します。呼び方はカンマ区切りで複数指定できます。</p><div class="form-grid"><label>1店目の名前<input id="store1-name"></label><label>1店目を指す言葉<input id="store1-aliases"></label><label>2店目の名前<input id="store2-name"></label><label>2店目を指す言葉<input id="store2-aliases"></label></div><div class="setting-section"><h3>スタッフの所属店</h3><p class="help">取り込み済み日報の送信者から自動で表示します。</p><div id="staff-store-settings"></div></div><div class="setting-section form-grid"><label class="wide">タイトル<input id="report-title"></label><label class="wide">挨拶<input id="report-greeting"></label><label>売上の見出し<input id="heading-sales"></label><label>商品分析の見出し<input id="heading-products"></label><label>課題の見出し<input id="heading-issues"></label><label>会社側でやることの見出し<input id="heading-actions"></label><label>改善テーマの見出し<input id="heading-theme"></label><label>締め<input id="report-closing"></label></div><div class="actions"><button id="save-settings" class="primary">設定を保存</button><button id="reset-settings">既定に戻す</button></div><p id="settings-message" class="message" role="status"></p></div></section>
+    <section id="settings-panel" class="tab-panel"><div class="card"><h2>設定</h2><p class="help">店名・売上投稿で使う呼び方・週報の文言を保存します。呼び方はカンマ区切りで複数指定できます。</p><div class="form-grid"><label>1店目の名前<input id="store1-name"></label><label>1店目を指す言葉<input id="store1-aliases"></label><label>2店目の名前<input id="store2-name"></label><label>2店目を指す言葉<input id="store2-aliases"></label></div><div class="setting-section"><h3>スタッフの所属店</h3><p class="help">取り込み済み日報の送信者から自動で表示します。</p><div id="staff-store-settings"></div></div><div class="setting-section form-grid"><label class="wide">タイトル<input id="report-title"></label><label class="wide">挨拶<input id="report-greeting"></label><label>売上の見出し<input id="heading-sales"></label><label>商品分析の見出し<input id="heading-products"></label><label>課題の見出し<input id="heading-issues"></label><label>会社側でやることの見出し<input id="heading-actions"></label><label>改善テーマの見出し<input id="heading-theme"></label><label>締め<input id="report-closing"></label></div><div class="actions"><button id="save-settings" class="primary">設定を保存</button><button id="reset-settings">既定に戻す</button></div><p id="settings-message" class="message" role="status"></p></div>
+      <div class="card"><h2>連携サーバー（任意）</h2><p class="help">LINEの日報とSquareの売上を自動で取ってくる場合だけ設定します。空のままなら、これまでどおり通信は一切ありません。URLとキーは担当者から受け取ってください。</p><div class="form-grid"><label class="wide">サーバーのURL<input id="renkei-url" placeholder="https://renkei.example.jp"></label><label class="wide">アクセスキー<input id="renkei-key" type="password" autocomplete="off"></label></div><div class="actions"><button id="save-renkei" class="primary">連携設定を保存</button><button id="test-renkei">接続を確認</button><button id="clear-renkei">連携をやめる</button></div><p id="renkei-setting-message" class="message" role="status"></p><div id="square-store-map" hidden><h3>Squareの店舗と、この画面の店の対応</h3><p class="help">「接続を確認」を押すと、Squareに登録されている店舗が並びます。どちらの店として数えるかを選んで保存してください。</p><div id="square-store-rows" class="form-grid"></div></div></div></section>
       </main>
     </div>
   </div>
@@ -89,7 +91,9 @@
     }
 
     // ---- 保存設定と既定値 ----
-    const STORAGE_KEY="nippoBunsekiMessagesV3",SETTINGS_KEY="nippoBunsekiSettingsV3",PRODUCT_KEY="nippoBunsekiProductsV3",WEEK_KEY="nippoBunsekiSelectedWeekV3",STORE_KEY="nippoBunsekiSelectedStoreV3",STAFF_STORE_KEY="nippoBunsekiStaffStoresV3";
+    const STORAGE_KEY="nippoBunsekiMessagesV3",SETTINGS_KEY="nippoBunsekiSettingsV3",PRODUCT_KEY="nippoBunsekiProductsV3",WEEK_KEY="nippoBunsekiSelectedWeekV3",STORE_KEY="nippoBunsekiSelectedStoreV3",STAFF_STORE_KEY="nippoBunsekiStaffStoresV3",RENKEI_KEY="nippoBunsekiRenkeiV1";
+    // Squareから取り込んだ売上の送信者名。日報の投稿と混ざらないよう固定にする。
+    const SQUARE_SENDER="Square（自動取得）",SQUARE_TIME="23:59";
     const BACKUP_FORMAT="日報分析・週報下書きバックアップ",BACKUP_VERSION=3;
     const DEFAULT_SETTINGS=Object.freeze({store1Name:"店A",store1Aliases:"店A",store2Name:"店B",store2Aliases:"店B",reportTitle:"⭕️週間改善レポート",reportGreeting:"今週もお疲れさまでした！",headingSales:"今週の売上",headingProducts:"商品分析",headingIssues:"今週見えた課題",headingActions:"会社側で来週やること",headingTheme:"来週の改善テーマ",reportClosing:"来週もよろしくお願いします！"});
     const STRING_FIELDS=["store","date","day","time","sender","body","type","p","dc","action","handover","good","trouble","peopleConcern","toVicePresident","freeText"];
@@ -165,6 +169,71 @@
     function makeMessage(date,time,sender,body,settings){const day=DAY_NAMES[(new Date(`${date}T00:00:00Z`).getUTCDay()+6)%7];return {store:detectStore(body,settings),date,day,time,sender,body,...parseMessageBody(body,settings)}}
     function sampleMessages(settings=DEFAULT_SETTINGS){const messages=[],aConditions=[5,4,4,5,4,4,5,4,4,5,4,4,5,4],bConditions=[null,null,null,null,null,null,null,null,null,3,2,3,null,null],aTimes=["21:01","21:02","21:03","21:04","21:05","21:06","21:07","21:08","21:09","21:01","21:02","21:03","21:04","21:05"],bTimes=["21:21","21:22","21:23","21:24","21:25","21:26","21:27","21:28","21:29","21:21","21:22","21:23","21:24","21:25"],salesTimes=["23:11","23:12","23:13","23:14","23:15","23:16","23:17","23:18","23:19","23:11","23:12","23:13","23:14","23:15"];SAMPLE_DATES.forEach((date,index)=>{const a=PDCA_TEMPLATES[index%5],b=PDCA_TEMPLATES[(index+3)%5],aPeople=index===9?"新人さんが少し元気ないように見えます":"";const bodyA=`①【P｜昨日決めたこと】\n${a[0]}\n②【D・C｜実行した結果と原因】\n${a[1]}\n③【A｜明日から変える行動】\n${a[2]}\n【仕込み・引き継ぎ】\n${a[3]}\n調子：${aConditions[index]}／人のこと：${aPeople}`;const bCondition=bConditions[index]===null?"":`\n調子：${bConditions[index]}／人のこと：`;const bodyB=`①【P｜昨日決めたこと】\n${b[0]}\n②【D・C｜実行した結果と原因】\n${b[1]}\n③【A｜明日から変える行動】\n${b[2]}\n【仕込み・引き継ぎ】\n${b[3]}${bCondition}`;messages.push(makeMessage(date,aTimes[index],"スタッフA",bodyA,settings),makeMessage(date,bTimes[index],"スタッフB",bodyB,settings),makeMessage(date,salesTimes[index],"副社長",SAMPLE_SALES[index],settings))});messages.push(makeMessage("2026-08-30","23:30","スタッフC","今週もお疲れさまでした！",settings),makeMessage("2026-09-02","23:40","副社長","売上台帳、2冊目になりました",settings),makeMessage("2026-09-06","22:05","スタッフC","お疲れさまです。\n来週のシフト、木曜おやすみもらえると助かります",settings));return mergeMessages([],messages)}
 
+    // ---- 連携サーバー（任意。設定したときだけ通信する。送るのはアクセスキーだけで、画面の入力内容は送らない） ----
+    function emptyRenkei(){return {url:"",key:"",locations:[],storeByLocation:{}}}
+    function validateRenkei(value){
+      if(!value||typeof value!=="object"||Array.isArray(value))throw new Error("連携設定の形が正しくありません。");
+      const url=typeof value.url==="string"?value.url.trim().replace(/\/+$/,""):"";
+      const key=typeof value.key==="string"?value.key.trim():"";
+      // 本番は必ず https。検証時だけ手元のサーバー（localhost）を許す。
+      if(url&&!/^https:\/\/[^\s/]+/.test(url)&&!/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/[^\s]*)?$/.test(url))throw new Error("サーバーのURLは https:// で始めてください。");
+      if(key.length>500)throw new Error("アクセスキーが長すぎます。");
+      const locations=Array.isArray(value.locations)?value.locations.filter(l=>l&&typeof l.id==="string"&&typeof l.name==="string").map(l=>({id:l.id,name:l.name})).slice(0,50):[];
+      const storeByLocation={};
+      if(value.storeByLocation&&typeof value.storeByLocation==="object"&&!Array.isArray(value.storeByLocation))
+        for(const [id,store] of Object.entries(value.storeByLocation))
+          if(typeof id==="string"&&["store1","store2","unset"].includes(store))storeByLocation[id]=store;
+      return {url,key,locations,storeByLocation};
+    }
+    function loadRenkei(){try{const raw=localStorage.getItem(RENKEI_KEY);return raw===null?emptyRenkei():validateRenkei(JSON.parse(raw))}catch(_){return emptyRenkei()}}
+    function saveRenkei(value){const checked=validateRenkei(value);localStorage.setItem(RENKEI_KEY,JSON.stringify(checked));return checked}
+    function renkeiReady(renkei){return Boolean(renkei&&renkei.url&&renkei.key)}
+    async function renkeiFetch(renkei,pathname){
+      if(!renkeiReady(renkei))throw new Error("連携サーバーが設定されていません。");
+      let response;
+      try{response=await fetch(renkei.url+pathname,{headers:{Authorization:"Bearer "+renkei.key},cache:"no-store"})}
+      catch(_){throw new Error("サーバーにつながりませんでした。URLとネットの接続を確認してください。")}
+      let data=null;try{data=await response.json()}catch(_){data=null}
+      if(!response.ok)throw new Error(data&&typeof data.error==="string"?data.error:`サーバーが応答しませんでした（${response.status}）。`);
+      return data;
+    }
+    function validateServerNippo(data){
+      if(!data||data.format!=="freesia-line-nippo"||data.version!==1||!Array.isArray(data.rows))throw new Error("日報の受け取り形式が違います。サーバーの版を確認してください。");
+      return data.rows.filter(row=>row&&typeof row==="object"&&isValidCalendarDate(row.date)&&/^\d{2}:\d{2}$/.test(row.time)
+        &&typeof row.sender==="string"&&row.sender.trim()&&typeof row.body==="string"&&row.body.trim());
+    }
+    function validateServerSales(data){
+      if(!data||data.format!=="freesia-square-sales"||data.version!==1||!Array.isArray(data.rows))throw new Error("売上の受け取り形式が違います。サーバーの版を確認してください。");
+      return data.rows.filter(row=>row&&typeof row==="object"&&isValidCalendarDate(row.date)&&typeof row.locationId==="string"
+        &&Number.isFinite(Number(row.sales))&&Number(row.sales)>=0);
+    }
+    function validateServerLocations(data){
+      if(!data||data.format!=="freesia-square-locations"||data.version!==1||!Array.isArray(data.rows))throw new Error("店舗一覧の受け取り形式が違います。");
+      return data.rows.filter(row=>row&&typeof row.id==="string"&&typeof row.name==="string").map(row=>({id:row.id,name:row.name}));
+    }
+    // Squareの売上は、副社長の売上投稿と同じ書き方の1通にしてから取り込む。以降の集計はこれまでと同じ道を通る。
+    function squareRowsToMessages(rows,renkei,settings){
+      const byDate=new Map();
+      rows.forEach(row=>{
+        const store=renkei.storeByLocation[row.locationId];
+        if(store!=="store1"&&store!=="store2")return; // 対応づけが済んでいない店舗は取り込まない
+        const name=store==="store1"?settings.store1Name:settings.store2Name;
+        const list=byDate.get(row.date)||[];
+        list.push({name,sales:Math.round(Number(row.sales))});
+        byDate.set(row.date,list);
+      });
+      return [...byDate.entries()].map(([date,list])=>{
+        const body=["■今日の売上",...list.map(item=>`${item.name}：${item.sales.toLocaleString("ja-JP")}円`)].join("\n");
+        return makeMessage(date,SQUARE_TIME,SQUARE_SENDER,body,settings);
+      });
+    }
+    // 同じ日に日報側の売上投稿もあると二重に数えてしまう。消す判断は人に残し、ここでは知らせるだけにする。
+    function salesConflictDates(dates,messages){
+      const target=new Set(dates);
+      return [...new Set(messages.filter(message=>message.sender!==SQUARE_SENDER&&target.has(message.date)
+        &&Array.isArray(message.salesEntries)&&message.salesEntries.some(entry=>entry.kind==="daily")).map(message=>message.date))].sort();
+    }
+
     // ---- 型検証、保存、バックアップ ----
     function validateMessages(value){if(!Array.isArray(value))throw new Error("日報の一覧ではありません。");const result=value.map((item,index)=>{if(!item||typeof item!=="object"||Array.isArray(item))throw new Error(`${index+1}件目の日報の形が正しくありません。`);STRING_FIELDS.forEach(field=>{if(typeof item[field]!=="string")throw new Error(`${index+1}件目の「${field}」が正しくありません。`)});if(!["store1","store2","unset"].includes(item.store)||!isValidCalendarDate(item.date)||!/^\d{2}:\d{2}$/.test(item.time)||!["PDCA型","6行形式","売上投稿","自由記述"].includes(item.type)||!item.sender||!item.body)throw new Error(`${index+1}件目の日報の値が正しくありません。`);for(const field of ["sales","busyness","condition"]){if(item[field]!==null&&!Number.isFinite(item[field]))throw new Error(`${index+1}件目の数値が正しくありません。`)}if(!Array.isArray(item.salesEntries)||!Array.isArray(item.unparsedSales))throw new Error(`${index+1}件目の売上情報が正しくありません。`);item.salesEntries.forEach(entry=>{if(!entry||!["daily","monthly","target","unitPrice","customerCount"].includes(entry.kind)||!["store1","store2","all",null].includes(entry.storeKey)||!Number.isFinite(entry.value)||typeof entry.raw!=="string")throw new Error(`${index+1}件目の売上行が正しくありません。`)});if(item.unparsedSales.some(line=>typeof line!=="string"))throw new Error(`${index+1}件目の未取得行が正しくありません。`);return {...item,salesEntries:item.salesEntries.map(entry=>({...entry})),unparsedSales:[...item.unparsedSales]}});if(new Set(result.map(messageKey)).size!==result.length)throw new Error("同じ店・日付・時刻・名前の日報が複数あります。");return result}
     function createBackup(messages,settings,products,staffStores={}){return {format:BACKUP_FORMAT,version:BACKUP_VERSION,exportedAt:new Date().toISOString(),messages:validateMessages(messages),settings:validateSettings(settings),productAnalyses:validateProducts(products),staffStores:validateStaffStores(staffStores)}}
@@ -208,6 +277,111 @@
     function switchTab(button){document.querySelectorAll(".tab").forEach(tab=>{const active=tab===button;tab.classList.toggle("active",active);tab.setAttribute("aria-selected",String(active))});document.querySelectorAll(".tab-panel").forEach(panel=>panel.classList.toggle("active",panel.id===button.dataset.tab))}
     function startBrowserApp(){try{appState=loadState();fillSettingsForm(appState.settings);document.getElementById("manual-date").value=new Date().toISOString().slice(0,10);document.getElementById("manual-time").value=new Date().toTimeString().slice(0,5);refreshScreens();if(appState.error)showMessage("backup-message",RECOVERY_MESSAGE,true)}catch(_){recoverApplicationState()}document.querySelectorAll(".tab").forEach(button=>button.addEventListener("click",()=>switchTab(button)));
       document.getElementById("week-selection").addEventListener("change",event=>{localStorage.setItem(WEEK_KEY,event.target.value);refreshScreens()});document.getElementById("store-selection").addEventListener("change",event=>{localStorage.setItem(STORE_KEY,event.target.value);refreshScreens()});
+      // ---- 連携サーバー（設定されているときだけ画面に出る） ----
+      const renkeiState={value:loadRenkei()};
+      function renderRenkei(){
+        const renkei=renkeiState.value;
+        document.getElementById("renkei-url").value=renkei.url;
+        document.getElementById("renkei-key").value=renkei.key;
+        document.getElementById("renkei-card").hidden=!renkeiReady(renkei);
+        const mapHost=document.getElementById("square-store-map");
+        mapHost.hidden=!renkei.locations.length;
+        const rows=document.getElementById("square-store-rows");
+        clear(rows);
+        renkei.locations.forEach(location=>{
+          const label=document.createElement("label");
+          label.append(document.createTextNode(location.name));
+          const select=document.createElement("select");
+          [["unset","取り込まない"],["store1",appState.settings.store1Name],["store2",appState.settings.store2Name]].forEach(([value,text])=>{
+            const option=document.createElement("option");
+            option.value=value;option.textContent=text;
+            option.selected=(renkei.storeByLocation[location.id]||"unset")===value;
+            select.append(option);
+          });
+          select.addEventListener("change",()=>{
+            // 描画時の値ではなく、そのとき保存されている値に足す（続けて他の店舗を選んでも消えないように）
+            const current=renkeiState.value;
+            renkeiState.value=saveRenkei({...current,storeByLocation:{...current.storeByLocation,[location.id]:select.value}});
+          });
+          label.append(select);rows.append(label);
+        });
+      }
+      function defaultSalesRange(){
+        const today=new Date(),to=today.toISOString().slice(0,10);
+        const from=new Date(today.getFullYear(),today.getMonth(),1);
+        return {from:`${from.getFullYear()}-${String(from.getMonth()+1).padStart(2,"0")}-01`,to};
+      }
+      {const range=defaultSalesRange();document.getElementById("square-from").value=range.from;document.getElementById("square-to").value=range.to;}
+      renderRenkei();
+      document.getElementById("save-renkei").addEventListener("click",()=>{
+        try{
+          renkeiState.value=saveRenkei({...renkeiState.value,url:document.getElementById("renkei-url").value,key:document.getElementById("renkei-key").value});
+          renderRenkei();
+          showMessage("renkei-setting-message",renkeiReady(renkeiState.value)?"連携設定を保存しました。「日報を入れる」タブに取り込みボタンが出ます。":"連携設定を空にしました。通信は行いません。");
+        }catch(error){showMessage("renkei-setting-message",error.message||"連携設定を保存できませんでした。",true)}
+      });
+      document.getElementById("clear-renkei").addEventListener("click",()=>{
+        if(!confirm("連携をやめますか？\nサーバーのURLとアクセスキーをこの画面から消します。取り込み済みの日報は残ります。"))return;
+        renkeiState.value=saveRenkei(emptyRenkei());
+        renderRenkei();
+        showMessage("renkei-setting-message","連携をやめました。以後の通信はありません。");
+      });
+      document.getElementById("test-renkei").addEventListener("click",async()=>{
+        try{
+          const candidate=saveRenkei({...renkeiState.value,url:document.getElementById("renkei-url").value,key:document.getElementById("renkei-key").value});
+          renkeiState.value=candidate;
+          const status=await renkeiFetch(candidate,"/api/status");
+          const parts=[];
+          if(status&&status.line)parts.push(`LINE${status.line.enabled?"：受け取り中":"：未設定"}（貯まっている日報 ${Number(status.line.stored)||0}通）`);
+          if(status&&status.square)parts.push(`Square${status.square.enabled?"：使えます":"：未設定"}`);
+          if(status&&status.square&&status.square.enabled){
+            try{
+              const locations=validateServerLocations(await renkeiFetch(candidate,"/api/square/locations"));
+              renkeiState.value=saveRenkei({...candidate,locations});
+            }catch(_){parts.push("店舗一覧は取れませんでした")}
+          }
+          renderRenkei();
+          showMessage("renkei-setting-message","つながりました。"+parts.join(" / "));
+        }catch(error){showMessage("renkei-setting-message",error.message||"確認できませんでした。",true)}
+      });
+      document.getElementById("fetch-line").addEventListener("click",async()=>{
+        const button=document.getElementById("fetch-line");
+        button.disabled=true;
+        try{
+          showMessage("renkei-message","サーバーから取り込んでいます…");
+          const rows=validateServerNippo(await renkeiFetch(renkeiState.value,"/api/line/messages"));
+          if(!rows.length){showMessage("renkei-message","サーバーにまだ日報がありません。LINEグループへの投稿をお待ちください。",true);return}
+          const incoming=rows.map(row=>makeMessage(row.date,row.time,row.sender,row.body,appState.settings));
+          const before=appState.messages.length;
+          appState.messages=mergeMessages(appState.messages,incoming);
+          saveState(appState);refreshScreens();
+          showMessage("renkei-message",`${rows.length}通を受け取り、${appState.messages.length-before}通を追加しました。`);
+        }catch(error){showMessage("renkei-message",error.message||"取り込めませんでした。",true)}
+        finally{button.disabled=false}
+      });
+      document.getElementById("fetch-square").addEventListener("click",async()=>{
+        const button=document.getElementById("fetch-square");
+        button.disabled=true;
+        try{
+          const from=document.getElementById("square-from").value,to=document.getElementById("square-to").value;
+          if(!isValidCalendarDate(from)||!isValidCalendarDate(to)||from>to)throw new Error("売上を取る期間を正しく選んでください。");
+          showMessage("renkei-message","Squareから売上を取り込んでいます…");
+          const rows=validateServerSales(await renkeiFetch(renkeiState.value,`/api/square/sales?from=${from}&to=${to}`));
+          if(!rows.length){showMessage("renkei-message","その期間のSquareの売上はありませんでした。",true);return}
+          const unmapped=[...new Set(rows.filter(row=>!["store1","store2"].includes(renkeiState.value.storeByLocation[row.locationId])).map(row=>row.locationId))];
+          const incoming=squareRowsToMessages(rows,renkeiState.value,appState.settings);
+          if(!incoming.length)throw new Error("店舗の対応づけが済んでいません。設定タブの「Squareの店舗と、この画面の店の対応」で選んでください。");
+          const conflicts=salesConflictDates(incoming.map(message=>message.date),appState.messages);
+          const before=appState.messages.length;
+          appState.messages=mergeMessages(appState.messages,incoming);
+          saveState(appState);refreshScreens();
+          const notes=[`${incoming.length}日分の売上を取り込みました（${appState.messages.length-before}通を追加）。`];
+          if(unmapped.length)notes.push(`${unmapped.length}店舗は対応づけが未設定のため取り込んでいません。`);
+          if(conflicts.length)notes.push(`${conflicts.join("・")}は日報にも売上投稿があります。二重に数えないよう、どちらかを「取り込み済みの日報」から削除してください。`);
+          showMessage("renkei-message",notes.join(" "),conflicts.length>0||unmapped.length>0);
+        }catch(error){showMessage("renkei-message",error.message||"取り込めませんでした。",true)}
+        finally{button.disabled=false}
+      });
       document.getElementById("line-files").addEventListener("change",async event=>{const files=[...event.target.files];if(!files.length)return;try{let incoming=[],skippedInvalidDates=0;for(const file of files){const parsed=parseLineHistory(await file.text(),file.name,appState.settings,appState.staffStores);skippedInvalidDates+=parsed.skippedInvalidDates;incoming.push(...parsed)}const skippedNotice=invalidDateMessage(skippedInvalidDates);if(!incoming.length){if(skippedInvalidDates){showMessage("line-message",`読み取れる日報がありませんでした。${skippedNotice}。`,true);return}throw new Error("日報のメッセージを読み取れませんでした。")}const before=appState.messages.length;appState.messages=mergeMessages(appState.messages,incoming);saveState(appState);refreshScreens();showMessage("line-message",`${files.length}ファイルから${incoming.length}通を読み取り、${appState.messages.length-before}通を追加しました。${skippedNotice}${skippedNotice?"。":""}`)}catch(_){showMessage("line-message","読み込めませんでした。ファイルの形式を確認して、もう一度選んでください。",true)}finally{event.target.value=""}});
       document.getElementById("add-manual").addEventListener("click",()=>{try{const date=document.getElementById("manual-date").value,time=document.getElementById("manual-time").value,sender=document.getElementById("manual-sender").value.trim(),body=document.getElementById("manual-body").value.trim();if(!date||!time||!sender||!body)throw new Error("日付・時刻・名前・本文をすべて入れてください。");const message=makeMessage(date,time,sender,body,appState.settings);message.store=document.getElementById("manual-store").value;appState.messages=mergeMessages(appState.messages,[message]);saveState(appState);document.getElementById("manual-body").value="";refreshScreens();showMessage("manual-message",`${date} ${time} ${sender}の日報を保存しました。`)}catch(_){showMessage("manual-message","保存できませんでした。日付・時刻・名前・本文を確認してください。",true)}});
       document.getElementById("report-list").addEventListener("click",event=>{const key=event.target.dataset.delete;if(key&&confirm("この日報を削除しますか？")){appState.messages=appState.messages.filter(message=>messageKey(message)!==key);saveState(appState);refreshScreens()}});
